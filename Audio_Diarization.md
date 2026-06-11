@@ -33,7 +33,7 @@ Plus: float32 precision throughout (no mixed precision), inference-only mode (no
 
 ### Resident Model Policy
 
-- All models are loaded **once** at batch start and held resident for the entire batch: Silero VAD (CPU), YOLOv8, InsightFace, ECAPA-TDNN, PyAnnote OVD, HuBERT. Combined footprint is well under 8 GB of the 48 GB available.
+- All models are loaded **once** at batch start and held resident for the entire batch: Silero VAD (CPU), YOLOv8, InsightFace, ECAPA-TDNN, PyAnnote OVD. Combined footprint is well under 8 GB of the 48 GB available.
 - **No `torch.cuda.empty_cache()` calls between layers. No model load/unload state machines between files.** The VRAM state machine from earlier revisions is removed as unnecessary complexity.
 - **Fixed inference batch constants:** ECAPA sliding-window inference uses a fixed batch of **256 windows**; visual models use a fixed frame batch of **32**. These are architectural constants recorded in the manifest — changing a batch size can change floating-point reduction order and break bit-identical reproduction.
 
@@ -54,7 +54,7 @@ Parallelism is allowed for throughput, but output must be **invariant to schedul
 
 ### Model Vendoring Mandate (air-gap startup gate)
 
-- All six model weight sets are pre-staged in a local model store: Silero VAD, YOLOv8, InsightFace, ECAPA-TDNN (SpeechBrain), PyAnnote OVD, HuBERT.
+- All five model weight sets are pre-staged in a local model store: Silero VAD, YOLOv8, InsightFace, ECAPA-TDNN (SpeechBrain), PyAnnote OVD.
 - At startup, the SHA-256 of **every** weight file is computed, verified against the pinned expected-hash manifest, and recorded in the session manifest.
 - **Any checksum mismatch is a BLOCKING HALT before any processing. The pipeline refuses to start.**
 - No network access is ever attempted: all hub-download code paths are disabled (`HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`); PyAnnote and SpeechBrain load exclusively from the local store.
@@ -172,7 +172,7 @@ flowchart TD
 
         TIER --> |"HIGH confidence"|EDGE_TRIM["Edge-Trim Refinement<br/>2s windows · 250ms hop<br/>Trim-only · never extend"]
         EDGE_TRIM --> RAW_OUT["Output Raw Active Blocks<br/>250ms-resolution edges<br/>Passed to Layer 3 for smoothing"]
-        TIER --> |"MEDIUM theta_med to theta_high"|MED_LOG["Sub-threshold Evidence Log<br/>NEVER auto-fed to HuBERT<br/>Human review only<br/>Future Option B: may go to Layer 3<br/>if human review unavailable"]
+        TIER --> |"MEDIUM theta_med to theta_high"|MED_LOG["Sub-threshold Evidence Log<br/>NEVER auto-promoted to clean output<br/>Human review only<br/>Future Option B: may go to Layer 3<br/>if human review unavailable"]
         TIER --> |"0.20 to theta_med"|SUBLOG["Sub-threshold Evidence Log<br/>Investigative evidence only"]
         TIER --> |"Below 0.20"|REJ["Rejected<br/>Timestamp + score logged"]
 
@@ -200,16 +200,16 @@ flowchart TD
         OVERLAP_DET["Explicit Overlap Detector<br/>E-SHARC inspired framework<br/>Is anyone else speaking simultaneously?"]
         OVERLAP_DET --> OV_GATE{"Simultaneous speech<br/>in window or gap?"}
         OV_GATE --> |"NO — target alone"|CLEAN_RAW["CLEAN Raw Frames"]
-        OV_GATE --> |"YES — overlap"|CONTAM["CONTAMINATED Window<br/>Logged as NaN<br/>Timestamp preserved<br/>Do NOT feed to HuBERT"]
+        OV_GATE --> |"YES — overlap"|CONTAM["CONTAMINATED Window<br/>Logged as NaN<br/>Timestamp preserved<br/>Excluded from clean output"]
         
         CLEAN_RAW --> L3_SMOOTH["Temporal Smoothing<br/>Merge gaps under 400ms<br/>Only across clean gaps"]
-        L3_SMOOTH --> CLEAN["CLEAN Target Segments<br/>Safe for HuBERT"]
+        L3_SMOOTH --> CLEAN["CLEAN Target Segments<br/>Pipeline final output"]
     end
 
-    CLEAN --> HUBERT
+    CLEAN --> FINAL_OUT
     CONTAM --> AUDIT_LOG
 
-    HUBERT["HuBERT<br/>Paralinguistic Feature Extraction<br/>Vocal stress · Hesitation · Cognitive load<br/>ONLY clean target-isolated audio<br/>Zero contamination · Scientifically valid"]
+    FINAL_OUT["Final Verified Output<br/>PTS-stamped clean target segments<br/>100% original signal · Zero contamination<br/>Downstream behavioral analysis: deferred phase"]
 
     AUDIT_LOG["Audit Log<br/>NaN windows · Enrollment quality history<br/>Discarded candidates · Variance flags<br/>Sub-threshold evidence · Operator decisions<br/>Video gap entries · Drift notices<br/>Operator threshold modifications<br/>SHA-256 output hash<br/>Complete forensic chain of custody"]
 ```
@@ -245,7 +245,7 @@ Convert raw video into PTS-true 16kHz mono audio plus a Silero speech segment ma
 
 **WavLM — Removed from Layer 0 (Revision 2)**
 - Earlier revisions computed WavLM Base+/Large frame embeddings here (10s chunks, 1s overlap-add stitching, HDF5 storage, ~7-10 GB per batch) to feed a since-rejected cross-attention scorer in Layer 2.
-- Under the Pure ECAPA architecture, no layer consumes those embeddings: Layer 1 ECAPA enrollment, Layer 2 sliding-window scanning, Layer 3 overlap detection, and HuBERT all operate on raw audio. The pipeline's most expensive computation had zero consumers.
+- Under the Pure ECAPA architecture, no layer consumes those embeddings: Layer 1 ECAPA enrollment, Layer 2 sliding-window scanning, and Layer 3 overlap detection all operate on raw audio. The pipeline's most expensive computation had zero consumers.
 - WavLM, the HDF5 store, the overlap-add stitching, and the chunk-boundary machinery are therefore removed entirely. Layer 0 is reduced to FFmpeg PTS-true extraction plus the Silero segment map.
 - See the Layer 2 Decision Record for the full audit-grade rationale, including why reusing WavLM via a pre-trained Speaker Verification head (Option B) was rejected.
 
@@ -469,7 +469,7 @@ Windows where the target/interviewer similarity margin is critically small are d
 | CRITICAL FAILURE | All videos done · still INSUFFICIENT | Terminal halt. Operator must intervene. Analysis not possible. |
 
 ### PENDING File Handling (Authoritative Pass)
-When E_composite promotes to a higher state, PENDING files require no special handling: under the single-authoritative-pass model, every file — PENDING or not — receives Layer 2 and Layer 3 exactly once, after Layer 1 has completed across all videos, using the frozen E_composite_final on raw audio. ECAPA sliding-window inference is lightweight and requires no cached embeddings. No behavioral data permanently lost.
+When E_composite promotes to a higher state, PENDING files require no special handling: under the single-authoritative-pass model, every file — PENDING or not — receives Layer 2 and Layer 3 exactly once, after Layer 1 has completed across all videos, using the frozen E_composite_final on raw audio. ECAPA sliding-window inference is lightweight and requires no cached embeddings. No target speech permanently lost.
 
 ### Cumulative Pool
 Single growing pool across all videos. Every triple-validated window from every video added to this pool. E_composite recalculated after each video's contribution (running mean-pool). ECAPA for Video 2 already uses a better E_composite than Video 1. No session-level intermediate vectors.
@@ -516,7 +516,7 @@ This record exists so the architectural choice is auditable without reconstructi
 
 4. **Forensic defensibility favors the simple, widely validated model.** SpeechBrain ECAPA-TDNN is the most independently replicated open speaker encoder in existence. A research-repo WavLM-SV head adds a custom integration surface that an external auditor cannot validate against an established baseline.
 
-**The corollary decision — WavLM is removed from Layer 0 entirely.** The original reason to compute WavLM frame embeddings was the rejected cross-attention scorer. Under Pure ECAPA, no layer consumes the HDF5 embeddings: Layer 1's ECAPA runs on raw audio, Layer 2 runs on raw audio, Layer 3's overlap detector runs on raw audio, and HuBERT consumes raw clean audio. The most expensive computation in the pipeline (and its 7–10 GB of storage, chunked overlap-add stitching, and boundary-artifact machinery) produced data with **zero consumers**. The fix for "we compute WavLM and then ignore it" is not to contort Layer 2 into consuming it — it is to stop computing it. Layer 0 is reduced to: FFmpeg PTS-true extraction + Silero VAD segment map.
+**The corollary decision — WavLM is removed from Layer 0 entirely.** The original reason to compute WavLM frame embeddings was the rejected cross-attention scorer. Under Pure ECAPA, no layer consumes the HDF5 embeddings: Layer 1's ECAPA runs on raw audio, Layer 2 runs on raw audio, and Layer 3's overlap detector runs on raw audio. The most expensive computation in the pipeline (and its 7–10 GB of storage, chunked overlap-add stitching, and boundary-artifact machinery) produced data with **zero consumers**. The fix for "we compute WavLM and then ignore it" is not to contort Layer 2 into consuming it — it is to stop computing it. Layer 0 is reduced to: FFmpeg PTS-true extraction + Silero VAD segment map.
 
 ### Encoder Upgrade Path (documented, not active)
 If a measurable accuracy gain is ever required, the correct move is not WavLM reuse but swapping the sliding-window encoder for a stronger **raw-audio** speaker model (e.g., WeSpeaker ResNet221/ResNet293 or ERes2Net, VoxCeleb2-trained). The Layer 2 architecture is encoder-agnostic: same windows, same cosine scoring, same calibration, same gates. Switching requires only a side-by-side benchmark on representative session audio, a manifest entry recording the encoder identity and checksum, and re-validation of calibrated thresholds. No architectural redesign.
@@ -636,17 +636,17 @@ The 5s/1s coarse scan localizes target speech reliably, but its edges inherit up
 ### Confidence tiers and what they mean
 
 - `HIGH` (`S_target > theta_high`, plus margin rule): strong enough to be passed forward as active raw speech.
-- `MEDIUM` (`theta_med – theta_high`): useful evidence, but not auto-fed to HuBERT under the current policy.
+- `MEDIUM` (`theta_med – theta_high`): useful evidence, but never auto-promoted to the clean output under the current policy.
 - `0.20 – theta_med`: weak evidence, kept only for investigation and audit.
 - `< 0.20`: rejected.
 
-The key rule is that Layer 2 is conservative about what it promotes. It is better to miss a weak window than to feed contaminated or uncertain speech into the later behavioral pipeline.
+The key rule is that Layer 2 is conservative about what it promotes. It is better to miss a weak window than to let contaminated or uncertain speech into the final verified output.
 
 ### Relocation of Temporal Smoothing
 
 Layer 2 performs no temporal smoothing (no merging of gaps under 400ms). That responsibility lives in Layer 3.
 
-If Layer 2 prematurely bridged a 300ms gap, it might inadvertently swallow a rapid 300ms interjection by the interviewer, masking it from the overlap detector. Therefore, Layer 2 outputs raw, unmerged contiguous HIGH-confidence blocks. Only after Layer 3 has confirmed that a sequence (and its gaps) is entirely free of overlap will the 400ms temporal smoothing be applied to bridge natural plosives for HuBERT.
+If Layer 2 prematurely bridged a 300ms gap, it might inadvertently swallow a rapid 300ms interjection by the interviewer, masking it from the overlap detector. Therefore, Layer 2 outputs raw, unmerged contiguous HIGH-confidence blocks. Only after Layer 3 has confirmed that a sequence (and its gaps) is entirely free of overlap will the 400ms temporal smoothing be applied to bridge natural plosives in the final output.
 
 ### Activity ratio check
 
@@ -688,15 +688,15 @@ Layer 2 answers "where is the target speaking?"
 
 Layer 3 answers "is that target speech contaminated by overlap?"
 
-That separation matters because Layer 2 is allowed to be more permissive about finding candidate speech, while Layer 3 is the final forensic filter before HuBERT.
+That separation matters because Layer 2 is allowed to be more permissive about finding candidate speech, while Layer 3 is the final forensic filter before output.
 
 ### The Static Enrollment Mandate
 **E_composite is frozen after Layer 1. It never changes in Layer 2.** There is no feedback loop. No self-updating of the enrollment profile during processing. Calibrated thresholds are likewise frozen for the batch once derived. Rationale: a forensic system must be fully reproducible. The same inputs on any date must produce bit-identical outputs. If E_composite or the thresholds updated themselves based on probabilistic guesses during Layer 2, the system would be non-deterministic — an auditor running the same video two days apart would get different results. This is forensically indefensible. Static enrollment wins.
 
 ### Decision 1A — MEDIUM Confidence Tier (Current: Option A)
-**Option A (Active):** MEDIUM confidence windows are never automatically fed to HuBERT. They are stored in the sub-threshold evidence log for human review only. The operator may manually authorize specific MEDIUM windows for inclusion after review.
+**Option A (Active):** MEDIUM confidence windows are never automatically promoted to the clean output. They are stored in the sub-threshold evidence log for human review only. The operator may manually authorize specific MEDIUM windows for inclusion after review.
 
-**Option B (Future Upgrade Path):** If fully automated processing without human review becomes a requirement, MEDIUM confidence windows that also pass Layer 3's overlap check (no simultaneous speech) may be elevated to PROVISIONAL CLEAN status and fed to HuBERT with an explicit PROVISIONAL flag in the behavioral profile. Switching from Option A to Option B requires: formal protocol change, updated chain of custody documentation, and re-validation of all affected outputs. This path is documented here so the upgrade does not require architectural redesign.
+**Option B (Future Upgrade Path):** If fully automated processing without human review becomes a requirement, MEDIUM confidence windows that also pass Layer 3's overlap check (no simultaneous speech) may be elevated to PROVISIONAL CLEAN status and included in the clean output with an explicit PROVISIONAL flag. Switching from Option A to Option B requires: formal protocol change, updated chain of custody documentation, and re-validation of all affected outputs. This path is documented here so the upgrade does not require architectural redesign.
 
 ### Design Decision Summary
 
@@ -856,7 +856,7 @@ Layer 2 outputs raw, un-smoothed blocks that meet the HIGH tier criteria — bui
 
 ### Layer 2 → Layer 3 Handoff
 
-| Tier | Overlap? | Final Decision | Reaches HuBERT? |
+| Tier | Overlap? | Final Decision | Reaches clean output? |
 |---|---|---|---|
 | HIGH | No overlap | CLEAN | Yes |
 | HIGH | Overlap detected | CONTAMINATED | No → NaN log |
@@ -871,11 +871,13 @@ Layer 2 outputs raw, un-smoothed blocks that meet the HIGH tier criteria — bui
 **Layer 3 — Contamination Flagging & Temporal Smoothing**
 - **Input:** Receives only un-smoothed HIGH confidence 1-second blocks from Layer 2.
 - **Overlap Detection:** Feeds the active blocks and intervening gaps into PyAnnote OVD (Overlap Speech Detection).
-- **The NaN-Only Exclusion Policy:** If PyAnnote detects simultaneous speech within a block, the entire block is logged as `NaN` (contaminated) and permanently excluded from the HuBERT pipeline. 
+- **The NaN-Only Exclusion Policy:** If PyAnnote detects simultaneous speech within a block, the entire block is logged as `NaN` (contaminated) and permanently excluded from the clean output. 
   - *Architectural Note:* The system explicitly forbids the use of AI separation models (e.g., HTDemucs, SepFormer) to "salvage" overlapping audio. Separation models hallucinate acoustic structures that are forensically indefensible. Pure exclusion is the only mathematically safe path.
 - **Temporal Smoothing:** For blocks that pass the overlap check cleanly, Layer 3 bridges gaps `< 400ms` (natural plosives/breath intakes) to form contiguous speech segments.
-- **Output:** Scientifically defensible, target-isolated behavioral data ready for HuBERT paralinguistics.
+- **Output:** Scientifically defensible, PTS-stamped, target-isolated clean speech segments — the pipeline's final verified output. Downstream behavioral/paralinguistic analysis is a deferred future phase requiring its own design; these segments are its input contract.
 
 ---
 
 *Document version: Revision 3 — implementation-ready. System Environment & Execution Model added; single authoritative Layer 2 pass (preview optional); edge-trim boundary refinement; single-pass ECAPA encoding (60s sanity cap); model vendoring mandate; batch corrected to 5-15 files, one continuous session — 2026-06-11*
+
+*Revision 3.1 — HuBERT removed from the pipeline (resident models reduced to five); behavioral/paralinguistic analysis deferred to a separate design phase. Layer 3's clean target segments are now the pipeline's final verified output and the input contract for that future phase — 2026-06-12*
