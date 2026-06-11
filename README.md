@@ -1,6 +1,6 @@
 # SPOVNOB Audio Diarization Module
 
-SPOVNOB is a forensic speaker diarization pipeline for behavioral analysis. It processes batches of interview-style video recordings and isolates the clean, uncontaminated speech of a single visually-verified target speaker, producing PTS-timestamped audio segments suitable for downstream paralinguistic feature extraction. The pipeline is fully deterministic and reproducible (bit-identical outputs for identical inputs), runs entirely offline/air-gapped with checksum-verified vendored models, performs zero audio synthesis or reconstruction (original signal only — contaminated segments are excluded, never repaired), and records every decision, parameter, and discard in an append-only, hash-chained session manifest.
+SPOVNOB is a forensic speaker diarization pipeline. It processes batches of interview-style video recordings and isolates the clean, uncontaminated speech of a single visually-verified target speaker, producing PTS-timestamped, verified-clean audio segments as its final output (downstream behavioral analysis is a deferred future phase). The pipeline is fully deterministic and reproducible (bit-identical outputs for identical inputs), runs entirely offline/air-gapped with checksum-verified vendored models, performs zero audio synthesis or reconstruction (original signal only — contaminated segments are excluded, never repaired), and records every decision, parameter, and discard in an append-only, hash-chained session manifest.
 
 The full architecture specification lives in [`Audio_Diarization.md`](Audio_Diarization.md). The module-by-module build plan is in [`implementation_order.md`](implementation_order.md).
 
@@ -13,8 +13,9 @@ The full architecture specification lives in [`Audio_Diarization.md`](Audio_Diar
 | 1 — Layer 0 preprocessor (PTS-true extraction + VAD segment map) | `layer0_preprocessor.py` | ✅ Complete |
 | 2 — Layer 1 enrollment (visual-anchored speaker profile) | `layer1_enrollment/` | ✅ Complete |
 | 3 — Layer 2 tracker (calibrated sliding-window target tracking) | `layer2_tracker.py` | ✅ Complete |
-| 4 — Layer 3 contamination flagging (overlap exclusion) | `layer3_contamination.py` | 🔲 Pending |
-| 5 — Pipeline runner | — | 🔲 Pending |
+| 4 — Layer 3 contamination flagging (overlap exclusion) | `layer3_contamination.py` | ✅ Complete |
+| 5 — Pipeline runner | `pipeline_runner.py` | 🔲 In progress |
+| Behavioral analysis | — | ⏸ Deferred — requires separate design phase |
 
 Every module ships a stdlib-only self-test that runs on a plain Python 3.10 with zero installed dependencies:
 
@@ -24,6 +25,7 @@ python3 environment_gate.py --selftest
 python3 layer0_preprocessor.py --selftest
 python3 -m layer1_enrollment --selftest
 python3 layer2_tracker.py --selftest
+python3 layer3_contamination.py --selftest
 ```
 
 ## Platform

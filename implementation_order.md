@@ -22,16 +22,19 @@ Arrows point from importer to imported. Strictly acyclic; no module imports a la
 | # | Module | Imports | Implements (Audio_Diarization.md sections) |
 |---|---|---|---|
 | 0a | `session_manifest.py` | stdlib only | Operator Threshold Manifest Format · Persistence, audit, and manifest rules for `E_anti` and `E_window` · Canonical Manifest Merge Rule (System Environment) · SHA-256 output-hash rules (Layer 2 Step 9) · append-only JSON-L, write-before-destructive-op |
-| 0b | `environment_gate.py` | 0a | CUDA Determinism Constants · Model Vendoring Mandate (6-model SHA-256 startup gate, blocking halt) · Resident Model Policy (single loader, no unload) · 10-second determinism verification checksum · FLAG 1 guard (forbid pyannote's speechbrain wrapper) · FLAG 2 guard (assert CUDAExecutionProvider available) |
+| 0b | `environment_gate.py` | 0a | CUDA Determinism Constants · Model Vendoring Mandate (5-model SHA-256 startup gate, blocking halt) · Resident Model Policy (single loader, no unload) · 10-second determinism verification checksum · FLAG 1 guard (forbid pyannote's speechbrain wrapper) · FLAG 2 guard (assert CUDAExecutionProvider available) |
 | 1 | `layer0_preprocessor.py` | 0a, 0b | Layer 0 — Global PTS Clock Initialization (`file_offset_ms`, `global_ms`) · FFmpeg Audio Strip (PTS-true, 16kHz mono) · Silero VAD segment map (non-destructive) · RAM preload of batch audio · parallel CPU stage (Parallel Execution Model) |
 | 2 | `layer1_enrollment.py` | 0a, 0b, 1 | Layer 1 — Clicks 1/2 + 9 Guardrails · `E_seed` capture · `E_window` (MAR/hysteresis/plosive buffer/yaw filter) · Single-Pass ECAPA Encoding (60s cap) · Track B/C `E_anti` + M-Trap · Triple Validation Gate · quality states + cumulative pool · variance gates · **strictly sequential in canonical file order** |
 | 3 | `layer2_tracker.py` | 0a, 0b, 1, 2 | Layer 2 — `E_anti` sanity check · Deterministic Threshold Calibration · 5s/1s sliding window (fixed batch 256) · Silero skip rule · median pooling · tiering + margin rule · Edge-Trim Boundary Refinement (2s/250ms, trim-only) · activity ratio · drift detection · single authoritative pass (preview optional) · parallel fan-out across files |
-| 4 | `layer3_contamination.py` | 0a, 0b, 3 | Layer 3 — PyAnnote OVD on HIGH blocks and gaps · NaN-Only Exclusion Policy (no separation models, ever) · temporal smoothing (<400ms, clean gaps only) · CLEAN segment output for HuBERT |
+| 4 | `layer3_contamination.py` | 0a, 0b, 3 | Layer 3 — PyAnnote OVD on HIGH blocks and gaps · NaN-Only Exclusion Policy (no separation models, ever) · temporal smoothing (<400ms, clean gaps only) · final CLEAN segment output |
+| 5 | `pipeline_runner.py` | 0a, 0b, 1, 2, 3, 4 | Batch orchestrator: gate → Layer 0 → Layer 1 → Layer 2 (authoritative) → Layer 3 · pipeline summary document (canonical, hashed) · final manifest chain verification |
+
+**Deferred — requires separate design phase:** behavioral/paralinguistic analysis (the former HuBERT consumer stage). WavLM and HuBERT were removed from the pipeline 2026-06-12; Layer 3's verified clean segments are this phase's final output and the future stage's input contract.
 
 ## Cross-Module Rules (binding)
 
 1. **Import discipline:** every module's first import is `environment_gate` (except 0a/0b themselves). `environment_gate` sets `CUBLAS_WORKSPACE_CONFIG` via `os.environ` **before** importing torch, then applies the three torch determinism flags — this ordering is mandatory because the env var must precede CUDA context creation.
-2. **No `torch.cuda.empty_cache()` anywhere. No model load/unload between files.** All six models are loaded once by `environment_gate`'s loader and stay resident.
+2. **No `torch.cuda.empty_cache()` anywhere. No model load/unload between files.** All five models are loaded once by `environment_gate`'s loader and stay resident.
 3. **Timestamps:** integers, milliseconds, PTS-derived. No floats for time, no frame indices, in any function signature or persisted record.
 4. **Manifest-first:** any function performing a destructive/irreversible step receives the manifest handle and appends its entry before acting.
 5. **Framework:** PyTorch exclusively; HuggingFace loads force the PyTorch backend; ONNXRuntime appears only inside the InsightFace wrapper in `layer1_enrollment.py`.

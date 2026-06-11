@@ -41,8 +41,7 @@ numpy==1.26.4               # NOT 2.x — breaking API/ABI changes
 # ---- Speech / speaker stack --------------------------------------------------
 speechbrain==1.0.0          # ECAPA-TDNN C=1024 (Layers 1 & 2)
 pyannote.audio==3.1.1       # Overlap detection ONLY (Layer 3) — see FLAG 1
-transformers==4.38.2        # HuBERT feature extraction (PyTorch backend only)
-huggingface-hub==0.21.3
+huggingface-hub==0.21.3     # speechbrain/pyannote loader dependency
 
 # silero-vad: NOT installed via pip in this stack. Loaded via torch.hub from a
 # VENDORED snapshot of github.com/snakers4/silero-vad pinned to commit:
@@ -80,6 +79,8 @@ tqdm==4.66.2
 # h5py==3.10.0  -> no consumer remains: the WavLM embedding cache was removed from
 #                  the architecture (Audio_Diarization.md Rev 2+). Re-add only if a
 #                  feature cache ever returns.
+# transformers==4.38.2 -> removed 2026-06-12 with HuBERT: behavioral analysis is
+#                  deferred to a separate design phase (5 resident models remain).
 # tensorflow / jax / flax / paddle -> forbidden by the Framework Mandate.
 #
 # =============================================================================

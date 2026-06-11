@@ -181,6 +181,9 @@ class FileTrack:
     ratio_level: str
     unattributed_speech_ms: int
     high_scores: List[float]               # S_target medians of HIGH blocks
+    # Full per-block tier map (local PTS), added for Layer 3's gap
+    # dominance guard (Module 4 amendment — additive, no behavior change).
+    blocks: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -685,6 +688,17 @@ def track_file(
         ratio_level=level,
         unattributed_speech_ms=max(0, silero_ms - high_ms),
         high_scores=high_scores,
+        blocks=[
+            {
+                "start_local_ms": start_pts + b["block_index"] * params.block_ms,
+                "end_local_ms": start_pts + (b["block_index"] + 1) * params.block_ms,
+                "tier": b["tier"],
+                "s_target_median": b["s_target_median"],
+                "s_interviewer_median": b["s_interviewer_median"],
+                "margin_failed": b.get("margin_failed", False),
+            }
+            for b in blocks
+        ],
     )
 
 

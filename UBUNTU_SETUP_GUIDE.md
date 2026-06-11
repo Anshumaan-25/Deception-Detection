@@ -84,7 +84,7 @@ python -c "import onnxruntime as o; print(o.get_available_providers())"
 #   build — re-download via the CUDA-12 feed index in requirements.txt)
 ```
 
-## 4. Model vendoring (six models → `model_store/`)
+## 4. Model vendoring (five models → `model_store/`)
 
 Run on the online staging box, then transfer `model_store/` whole.
 Gated HF models need a logged-in token: `huggingface-cli login`.
@@ -118,14 +118,12 @@ unzip /tmp/buffalo_l.zip -d "$MS/insightface/models/buffalo_l"
 #    huggingface.co/pyannote/segmentation-3.0 first, then:)
 huggingface-cli download pyannote/segmentation-3.0 \
     --local-dir "$MS/pyannote-segmentation-3.0"
-
-# 6. HuBERT large (pretrained, ll60k — PROVISIONAL checkpoint choice,
-#    to be confirmed at the HuBERT consumer module review)
-huggingface-cli download facebook/hubert-large-ll60k \
-    --local-dir "$MS/hubert-large-ll60k"
 ```
 
-**Freeze the hash registry (run ONCE, on the staging box, after all six
+(HuBERT was removed from the pipeline 2026-06-12 — behavioral analysis is
+deferred to a separate design phase. Five models, not six.)
+
+**Freeze the hash registry (run ONCE, on the staging box, after all five
 downloads):**
 ```bash
 cd /opt/spovnob/code
@@ -172,7 +170,7 @@ python3 environment_gate.py --run --no-load-models \
     --model-store /opt/spovnob/model_store \
     --manifest /opt/spovnob/session/gate_check.manifest.jsonl
 
-# Stage 2 — full gate including resident loading of all six models:
+# Stage 2 — full gate including resident loading of all five models:
 python3 environment_gate.py --run \
     --model-store /opt/spovnob/model_store \
     --manifest /opt/spovnob/session/gate_check.manifest.jsonl \
@@ -204,3 +202,5 @@ and exits non-zero.
 - *2026-06-12 — Module 1 (layer0_preprocessor.py): no new dependencies. Uses the already-listed ffmpeg/ffprobe binaries and the resident Silero model. Standalone run: `python3 layer0_preprocessor.py --run --videos <files...> --work-dir <dir> --model-store <store> --manifest <jsonl>`.*
 - *2026-06-12 — Module 2 (layer1_enrollment/ package): no new dependencies. Run: `python3 -m layer1_enrollment --run --videos <files...> --clicks clicks.json --work-dir <dir> --model-store <store> --manifest <jsonl>`. Operator clicks JSON format: `{"speaking_click": {"file_index": 0, "pts_ms": 41250, "x": 812, "y": 440}, "anti_click": {...optional...}}` (pts_ms must be integers). **Bench validation required before the first real batch:** (1) the MAR landmark indices from the architecture doc (`upper_inner_lip` 52/53/54, `lower_inner_lip` 61/62/63, `mouth_width_pair` 52/61) must be verified against real InsightFace 2d106det output — the width pair as documented duplicates the vertical pair and is geometrically suspect; correct values are EnrollmentParams fields (manifest-logged change, no code edit). (2) Confirm `face.pose` (head yaw) is populated by the buffalo_l pack; if absent, yaw suspension is inactive and a per-video warning is logged.*
 - *2026-06-12 — Module 3 (layer2_tracker.py): no new dependencies. Run (chains gate → Layer 0 → Layer 1 → Layer 2 authoritative pass): `python3 layer2_tracker.py --run --videos <files...> --clicks clicks.json --work-dir <dir> --model-store <store> --manifest <jsonl>` (add `--preview` for a non-authoritative preview pass). Output: `<work-dir>/layer2/layer2_output.json` (canonical JSON, SHA-256 in manifest) plus per-file worker logs merged into the manifest in canonical order.*
+- *2026-06-12 — Module 4 (layer3_contamination.py): no new dependencies. Uses the resident PyAnnote OVD pipeline (already vendored: pyannote-segmentation-3.0). Run (full chain gate → Layers 0-3): `python3 layer3_contamination.py --run --videos <files...> --clicks clicks.json --work-dir <dir> --model-store <store> --manifest <jsonl>`. Outputs: final verified clean segment WAVs + sidecars under `<work-dir>/layer3/clean/`, NaN exclusion log in the manifest, and `<work-dir>/layer3/layer3_output.json` (canonical JSON, SHA-256 in manifest).*
+- *2026-06-12 — WavLM/HuBERT removal: behavioral analysis deferred to a separate design phase. `transformers` dropped from requirements.txt; `facebook/hubert-large-ll60k` dropped from the model store (§4) — **five** resident models. If you already vendored HuBERT, delete `model_store/hubert-large-ll60k/` and re-run `--freeze-hashes` (the gate rejects unexpected files).*

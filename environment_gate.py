@@ -8,14 +8,14 @@ Layer:      Cross-layer startup gate (Module 0b). Imports only Module 0a
 
 Purpose:    Prove the runtime environment is the one the architecture
             demands — deterministic, air-gapped, correctly pinned, with
-            verified model weights — and load the six resident models
+            verified model weights — and load the five resident models
             exactly once. Refuses to start (blocking halt) otherwise.
 
 Inputs:     - model store directory (vendored weights + expected_hashes.json)
             - session manifest path (Module 0a)
 Outputs:    - manifest entries: determinism_check, model_checksum,
               blocking_halt (on any failure)
-            - a ``ResidentModels`` registry holding all six models,
+            - a ``ResidentModels`` registry holding all five models,
               loaded once and held for the entire batch (no unloading).
 
 Implements (Audio_Diarization.md — System Environment & Execution Model):
@@ -110,7 +110,6 @@ PINNED_VERSIONS: Dict[str, str] = {
     "numpy": "1.26.4",
     "speechbrain": "1.0.0",
     "pyannote.audio": "3.1.1",
-    "transformers": "4.38.2",
     "huggingface-hub": "0.21.3",
     "ultralytics": "8.1.47",
     "insightface": "0.7.3",
@@ -130,15 +129,17 @@ PINNED_VERSIONS: Dict[str, str] = {
     "tqdm": "4.66.2",
 }
 
-# The six vendored models (Model Vendoring Mandate). Directory names are the
+# The five vendored models (Model Vendoring Mandate). Directory names are the
 # canonical model-store layout documented in UBUNTU_SETUP_GUIDE.md.
+# HuBERT was removed 2026-06-12: behavioral analysis is deferred to a
+# separate design phase. WavLM was never in code (removed at architecture
+# Rev 2).
 REQUIRED_MODEL_DIRS: Dict[str, str] = {
     "silero_vad": "silero-vad",                      # commit 915dd3d639b8...
     "ecapa_tdnn": "speechbrain-spkrec-ecapa-voxceleb",
     "yolov8": "yolov8",
     "insightface": "insightface",
     "pyannote_ovd": "pyannote-segmentation-3.0",
-    "hubert": "hubert-large-ll60k",
 }
 
 
@@ -149,7 +150,7 @@ class EnvironmentGateError(RuntimeError):
 
 @dataclass
 class ResidentModels:
-    """All six models, loaded once, resident for the entire batch.
+    """All five models, loaded once, resident for the entire batch.
     No member of this registry is ever unloaded or replaced mid-batch."""
 
     device: str
@@ -158,8 +159,6 @@ class ResidentModels:
     yolo: Any = None                # ultralytics YOLO (CUDA)
     insightface: Any = None         # FaceAnalysis via CUDAExecutionProvider
     ovd_pipeline: Any = None        # pyannote OverlappedSpeechDetection (CUDA)
-    hubert: Any = None              # transformers HubertModel (CUDA)
-    hubert_features: Any = None     # Wav2Vec2FeatureExtractor (CPU, stateless)
     loaded_names: List[str] = field(default_factory=list)
 
 
@@ -418,7 +417,6 @@ def load_resident_models(manifest: SessionManifest, store: Path) -> ResidentMode
     from pyannote.audio import Model as PyannoteModel
     from pyannote.audio.pipelines import OverlappedSpeechDetection
     from speechbrain.inference.speaker import EncoderClassifier
-    from transformers import HubertModel, Wav2Vec2FeatureExtractor
     from ultralytics import YOLO
 
     device = "cuda"
@@ -463,18 +461,6 @@ def load_resident_models(manifest: SessionManifest, store: Path) -> ResidentMode
     models.ovd_pipeline.instantiate(dict(PYANNOTE_OVD_HYPERPARAMS))
     models.ovd_pipeline.to(torch.device(device))
     models.loaded_names.append("pyannote_ovd")
-
-    # 6. HuBERT (downstream paralinguistics) — PyTorch backend by construction
-    #    (HubertModel is a torch.nn.Module; no TF/Flax weights can load).
-    hubert_dir = str(store / "hubert-large-ll60k")
-    models.hubert = (
-        HubertModel.from_pretrained(hubert_dir, local_files_only=True)
-        .to(device).eval()
-    )
-    models.hubert_features = Wav2Vec2FeatureExtractor.from_pretrained(
-        hubert_dir, local_files_only=True
-    )
-    models.loaded_names.append("hubert")
 
     manifest.append(
         Operation.DETERMINISM_CHECK,
