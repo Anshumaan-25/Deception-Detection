@@ -45,3 +45,23 @@ expected_hashes.json
 
 # --- Temporary HTML render artifacts ----------------------------------------------------
 *_tmp.html
+
+# --- Deception detection runtime dirs (not source) -------------------------------------
+deception_detection/SPOVNOB_intake/
+deception_detection/pipeline_system_outputs/
+deception_detection/weights/trt_engines/
+
+# --- Deception detection external sub-repos (cloned separately, not committed here) ---
+# Each is a standalone GitHub repo with its own history. Clone them into place:
+#   git clone https://github.com/Anshumaan-25/Phase_1-openface_base.git  deception_detection/OpenFace-3.0
+#   git clone https://github.com/Anshumaan-25/ffmpeg_ingestion.git        deception_detection/ffmpeg_ingestion
+#   git clone https://github.com/Anshumaan-25/MediaPipe.git               deception_detection/mediapipe_pose
+#   git clone https://github.com/Anshumaan-25/OPENCV_STREAMING.git        deception_detection/opencv_streaming
+deception_detection/OpenFace-3.0/
+deception_detection/ffmpeg_ingestion/
+deception_detection/mediapipe_pose/
+deception_detection/opencv_streaming/
+
+# --- Audio diarization runtime dirs (not source) ----------------------------------------
+audio_diarization/session/
+audio_diarization/wheelhouse/

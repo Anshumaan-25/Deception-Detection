@@ -1,0 +1,135 @@
+Based on my analysis of PersonTracking4, here's a detailed breakdown of how everything is managed:
+
+## **PersonTracking4 - System Architecture & Process Flow**
+
+### **1. Project Overview**
+PersonTracking4 is a **Face Identity Lock Tracking System** that combines person detection with face recognition to track a specific individual through a video.
+
+---
+
+### **2. Component Architecture**
+
+#### **main.py** - Orchestrator
+- **Entry Point**: Accepts command-line arguments (`--video`, `--model`)
+- **Device Selection**: Automatically uses GPU (CUDA) if available, otherwise CPU
+- **Component Initialization**:
+  - `PersonDetector`: YOLO-based detection & tracking
+  - `ClickSelector`: Mouse interaction handler
+  - `TargetTracker`: Visualization drawer
+  - `FaceLock`: Face embedding extractor & matcher
+
+---
+
+### **3. Detailed Process Flow**
+
+```
+START
+  ↓
+[Initialize Components]
+  ├─ PersonDetector (YOLOv8 model)
+  ├─ ClickSelector (mouse callback)
+  ├─ TargetTracker (visualization)
+  └─ FaceLock (InsightFace embeddings)
+  ↓
+[Main Video Loop]
+  ↓
+  ├─ Read frame from video
+  ↓
+  ├─ PHASE 1: DETECTION & TRACKING (if target not locked)
+  │   └─ PersonDetector.detect_and_track()
+  │       ├─ YOLOv8 with tracking enabled
+  │       ├─ Filter: person class only (class 0)
+  │       ├─ Confidence threshold: 0.4
+  │       └─ Output: List of {id, bbox} for all detected persons
+  │
+  ├─ PHASE 2: TARGET SELECTION (if target not locked)
+  │   └─ User clicks on a person in video
+  │       ├─ ClickSelector.select_target() captures click
+  │       ├─ Matches click coordinates to detection bboxes
+  │       └─ When match found:
+  │           └─ FaceLock.lock() extracts face embedding
+  │               ├─ Crop person from frame using bbox
+  │               ├─ InsightFace extracts face embedding
+  │               └─ Store embedding as reference
+  │
+  ├─ PHASE 3: FACE MATCHING (if target locked)
+  │   └─ FaceLock.match() runs on every frame
+  │       ├─ For each detected person:
+  │       │   ├─ Crop person from frame
+  │       │   ├─ Extract face embedding via InsightFace
+  │       │   └─ Compare with locked embedding (cosine similarity)
+  │       │
+  │       └─ Return best match bbox if score > 0.45 (threshold)
+  │
+  ├─ PHASE 4: VISUALIZATION
+  │   └─ TargetTracker.draw()
+  │       ├─ Green boxes: All detected persons
+  │       └─ Red box with "FACE LOCK" label: Matched target
+  │
+  └─ Display frame → Press ESC to exit
+```
+
+---
+
+### **4. Key Components Detailed**
+
+#### **detector.py** - Person Detection
+- **Model**: YOLOv8 (with persistent tracking)
+- **Process**:
+  - Input: Video frame
+  - Detection with tracking enabled (`persist=True`)
+  - Filters for person class only
+  - Output: `[{"id": int, "bbox": (x1,y1,x2,y2)}, ...]`
+  - **ID Persistence**: Maintains same ID for same person across frames
+
+#### **click_selector.py** - User Selection
+- **Role**: Mouse event handler
+- **Process**:
+  1. `register()` - Sets up mouse callback on display window
+  2. `mouse_callback()` - Captures left-click coordinates
+  3. `select_target()` - Matches click point to detection bboxes
+  4. Returns target person's ID or keeps existing one
+
+#### **face_lock.py** - Face Recognition
+- **Model**: InsightFace (buffalo_l - pre-trained face recognition)
+- **Key Methods**:
+  - `lock()`: Extracts reference face embedding from clicked person
+  - `match()`: Compares all detected faces against reference embedding
+  - `cosine()`: Similarity metric (dot product / vector norms)
+  - **Threshold**: 0.45 (faces must match with 45% cosine similarity)
+
+#### **tracker.py** - Visualization
+- **Rendering**:
+  - Green rectangles: All detected persons
+  - Red rectangle: Locked target (if matched)
+  - Text label: "FACE LOCK" confirmation
+
+---
+
+### **5. State Management**
+
+| State | Variable | Description |
+|-------|----------|-------------|
+| **Selection Phase** | `facelock.target_embedding == None` | Waiting for user click |
+| **Locked Phase** | `facelock.target_embedding != None` | Actively matching faces |
+| **Match Result** | `locked_bbox` | Current best-matched bounding box |
+| **Tracking ID** | `selector.target_id` | YOLOv8 track ID of selected person |
+
+---
+
+### **6. Dependencies & Models**
+
+- **YOLOv8**: Person detection & tracking
+- **InsightFace + buffalo_l**: Face embedding extraction
+- **Models Location**: `weights/models/buffalo_l/` (5 ONNX files for face analysis)
+- **Environment**: deception.yml (Conda configuration)
+
+---
+
+### **7. Configuration**
+
+- **Confidence threshold** (detection): 0.4
+- **Cosine similarity threshold** (face match): 0.45
+- **Device**: Auto GPU/CPU selection
+
+This system manages face tracking by **decoupling detection, selection, and recognition** into independent modules that communicate through simple data structures (detections list, bboxes, embeddings).
