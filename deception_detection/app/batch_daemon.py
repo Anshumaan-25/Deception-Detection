@@ -315,12 +315,16 @@ def _gpu_worker_batch_entrypoint(
     yolo_path: str,
     diarization_output_json: str,
     offset_ms: int = 0,
+    session_manifest_path: str = None,
+    baseline_file_index: int = 0,
 ):
     """
     Batch counterpart of _gpu_worker_entrypoint (audio-diarization merge).
     Spawned in an isolated subprocess (fresh CUDA context). Runs the whole
     recording — N clips that share one audio-diarization enrollment — feeding
-    each clip its verified target-speech segments via DiarizationBridge.
+    each clip its verified target-speech segments via DiarizationBridge, then
+    calibrates every clip against the dedicated baseline clip
+    (baseline_file_index) and assembles the recording-level CSV.
 
     clips: list of (canonical_mp4, canonical_wav) pairs ordered by file_index.
     """
@@ -336,6 +340,8 @@ def _gpu_worker_batch_entrypoint(
         recording_id=recording_id,
         diarization_output_json=diarization_output_json,
         offset_ms=offset_ms,
+        session_manifest_path=session_manifest_path,
+        baseline_file_index=baseline_file_index,
     )
 
 # ═══════════════════════════════════════════════════════════════════
@@ -492,10 +498,14 @@ class BatchOrchestrator:
         pipeline (operator click + run). Each clip is processed through the
         deception cascade with its verified target-speech segments, in ONE
         spawn-isolated subprocess (fresh CUDA context for the whole recording).
+        The clip at profile["baseline_file_index"] (default 0) is the dedicated
+        baseline video: every clip is z-scored against ITS stats, and the
+        per-clip results are assembled into
+        OUTPUT_DIR/<recording_id>/<recording_id>_recording_calibrated.csv.
 
-        NOTE (parked): per-clip outputs only. ELAN injection, baseline
-        calibration, and combined-per-recording assembly are deferred (coupled
-        to the global-timeline design that is still pending).
+        NOTE (parked): ELAN ground-truth injection stays single-clip-only — it
+        is a training-corpus concern (production has no ground truth, ever) and
+        no training is planned right now.
         """
         if self._shutdown_event.is_set():
             return
@@ -529,7 +539,14 @@ class BatchOrchestrator:
                 return
 
         offset_ms = int(profile.get("offset_ms", 0))
-        logger.info(f"[{recording_id}] batch mode: {len(clips)} clip(s). Awaiting GPU semaphore...")
+        baseline_file_index = int(profile.get("baseline_file_index", 0))
+        # Optional investigative session manifest (ContextMapper), resolved
+        # relative to the bucket — mirrors the single-clip path above.
+        session_manifest_path = profile.get("session_manifest_path", None)
+        if session_manifest_path:
+            session_manifest_path = str(intake_session_dir / session_manifest_path)
+        logger.info(f"[{recording_id}] batch mode: {len(clips)} clip(s), "
+                    f"baseline_file_index={baseline_file_index}. Awaiting GPU semaphore...")
         async with self.gpu_semaphore:
             if self._shutdown_event.is_set():
                 return
@@ -552,6 +569,8 @@ class BatchOrchestrator:
                         self.yolo_path,
                         str(diar_json),
                         offset_ms,
+                        session_manifest_path,
+                        baseline_file_index,
                     ),
                     daemon=False,
                 )
@@ -564,9 +583,11 @@ class BatchOrchestrator:
                 del self.active_processes[recording_id]
 
                 if exit_code == 0:
-                    # ELAN injection + baseline calibration deferred for batch
-                    # mode (see method docstring). Per-clip outputs are in
-                    # OUTPUT_DIR/<recording_id>_<file_index>.
+                    # Baseline calibration + recording assembly now happen
+                    # inside the subprocess (process_recording_session).
+                    # Per-clip outputs: OUTPUT_DIR/<recording_id>_<file_index>;
+                    # recording-level: OUTPUT_DIR/<recording_id>/. ELAN
+                    # injection stays single-clip-only (see docstring).
                     self.ledger.set_state(recording_id, "COMPLETED", {
                         "completed_at": datetime.now(timezone.utc).isoformat(),
                         "exit_code": exit_code,

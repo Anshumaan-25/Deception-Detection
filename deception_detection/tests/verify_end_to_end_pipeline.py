@@ -2,7 +2,7 @@
 End-to-End Pipeline Unification — Integration Test Suite
 ==========================================================
 Validates the full data cascade: Raw 30fps CSV → DynamicWindowEngine
-(confidence-weighted fusion + HuBERT acoustic NaN injection + FFT
+(confidence-weighted fusion + WavLM acoustic NaN injection + FFT
 behavioral periodicity) → BaselineCalibrator (Z-score normalization)
 → Final calibrated feature matrix.
 
@@ -36,7 +36,7 @@ except ImportError:
     # Mirror the canonical 20-column schema from acoustic_extractor.py
     ACOUSTIC_COLUMN_NAMES = (
         ["acoustic_volatility", "prosodic_velocity"]
-        + [f"hubert_latent_{i}" for i in range(16)]
+        + [f"wavlm_latent_{i}" for i in range(16)]
         + ["vocal_entropy", "acoustic_energy_rms"]
     )
 
@@ -50,7 +50,7 @@ except ImportError:
     # Create a minimal stub for the acoustic_extractor module
     stub_module = types.ModuleType("audio_isolation.core.acoustic_extractor")
     stub_module.ACOUSTIC_COLUMN_NAMES = ACOUSTIC_COLUMN_NAMES
-    stub_module.HuBERTAcousticExtractor = None
+    stub_module.WavLMAcousticExtractor = None
 
     # Ensure the package hierarchy exists in sys.modules
     if "audio_isolation" not in sys.modules:
@@ -230,7 +230,7 @@ def test_window_engine_chain(raw_csv_path: str, windowed_csv_path: str):
     result = engine.compile_sliding_windows(
         raw_csv_path=raw_csv_path,
         output_csv_path=windowed_csv_path,
-        acoustic_extractor=None,  # No HuBERT — acoustic columns → NaN
+        acoustic_extractor=None,  # No WavLM — acoustic columns → NaN
     )
 
     check("Window engine returned a result path", result is not None)
@@ -455,8 +455,8 @@ def test_manifest_structure(manifest_dir: str):
             },
             "acoustic_extraction": {
                 "status": "success",
-                "model": "facebook/hubert-base-ls960",
-                "layer": 7,
+                "model": "microsoft/wavlm-large",
+                "layer": 14,
                 "audio_duration_ms": 40000.0,
             },
             "raw_compilation": {
@@ -521,9 +521,9 @@ def test_manifest_structure(manifest_dir: str):
     check("audio_isolation has correlation_score",
           "correlation_score" in loaded["stages"]["audio_isolation"])
     check("acoustic_extraction has model name",
-          loaded["stages"]["acoustic_extraction"].get("model") == "facebook/hubert-base-ls960")
+          loaded["stages"]["acoustic_extraction"].get("model") == "microsoft/wavlm-large")
     check("acoustic_extraction has layer index",
-          loaded["stages"]["acoustic_extraction"].get("layer") == 7)
+          loaded["stages"]["acoustic_extraction"].get("layer") == 14)
     check("window_aggregation has total_windows",
           "total_windows" in loaded["stages"]["window_aggregation"])
     check("baseline_calibration has baseline_windows",

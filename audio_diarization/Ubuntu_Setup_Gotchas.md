@@ -31,7 +31,7 @@ export TRANSFORMERS_OFFLINE=0
 huggingface-cli download speechbrain/spkrec-ecapa-voxceleb
 huggingface-cli download pyannote/segmentation-3.0
 ```
-*Air-gap caution: on the production box, prefer fixing this by making the vendored model-store directory complete (every repo file, including `label_encoder.txt` and `hyperparams.yaml`), rather than relying on the global HF cache — the cache lives outside `expected_hashes.json`, so a cache-dependent load is not covered by the startup checksum gate. See `SPOVNOB_TECHNICAL_DEEP_DIVE.md`, Part IX.*
+*Air-gap caution: on the production box, prefer fixing this by making the vendored model-store directory complete (every repo file, including `label_encoder.txt` and `hyperparams.yaml`), rather than relying on the global HF cache — the cache lives outside `expected_hashes.json`, so a cache-dependent load is not covered by the startup checksum gate. See `SPOVNOB_MASTER_REFERENCE.md`, Part 14 (Known Limitations).*
 
 ### 4. `expected_hashes.json` Permission Denied Error
 **The Problem:** Running `python environment_gate.py --freeze-hashes` creates the hash registry file. If you ever need to re-run it (for example, if a model updates), the script throws a `PermissionError` because it intentionally locks the file to prevent tampering.

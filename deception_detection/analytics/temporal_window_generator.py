@@ -68,7 +68,7 @@ class TemporalWindowEngine:
         au_columns = ["AU1", "AU2", "AU4", "AU6", "AU9", "AU12", "AU25", "AU26"]
 
         # --- STRICT TIME-BASED SLICING ---
-        # We iterate over time, not rows. This guarantees perfect HuBERT audio alignment.
+        # We iterate over time, not rows. This guarantees perfect WavLM audio alignment.
         for start_time_ms in np.arange(0.0, max_time_ms - self.window_size_ms + 1.0, self.stride_ms):
             end_time_ms = start_time_ms + self.window_size_ms
             
@@ -147,7 +147,7 @@ class TemporalWindowEngine:
                 record["disgust_leak"] = np.nan
                 record["postural_freeze_index"] = np.nan
 
-                # HuBERT acoustic nullification
+                # WavLM acoustic nullification
                 for col in ACOUSTIC_COLUMN_NAMES:
                     record[col] = np.nan
 
@@ -251,7 +251,7 @@ class TemporalWindowEngine:
                 else:
                     record["postural_freeze_index"] = np.nan
 
-                # --- HuBERT Acoustic Feature Injection (Layer 7) ---
+                # --- WavLM Acoustic Feature Injection ---
                 if acoustic_extractor is not None:
                     acoustic_features = acoustic_extractor.extract_window_features(start_time_ms, end_time_ms)
                     record.update(acoustic_features)

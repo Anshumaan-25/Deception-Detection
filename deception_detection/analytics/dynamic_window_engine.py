@@ -188,7 +188,7 @@ class DynamicWindowEngine:
                 else:
                     record["postural_freeze_index"] = np.nan
 
-                # --- HuBERT Acoustic Feature Injection (Layer 7) ---
+                # --- WavLM Acoustic Feature Injection ---
                 if acoustic_extractor is not None:
                     acoustic_features = acoustic_extractor.extract_window_features(start_time, end_time)
                     record.update(acoustic_features)
@@ -264,7 +264,7 @@ class DynamicWindowEngine:
                 record["disgust_leak"] = np.nan
                 record["postural_freeze_index"] = np.nan
 
-                # HuBERT acoustic nullification
+                # WavLM acoustic nullification
                 for col in ACOUSTIC_COLUMN_NAMES:
                     record[col] = np.nan
 

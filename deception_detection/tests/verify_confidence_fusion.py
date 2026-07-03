@@ -25,7 +25,7 @@ try:
 except ImportError:
     ACOUSTIC_COLUMN_NAMES = (
         ["acoustic_volatility", "prosodic_velocity"]
-        + [f"hubert_latent_{i}" for i in range(16)]
+        + [f"wavlm_latent_{i}" for i in range(16)]
         + ["vocal_entropy", "acoustic_energy_rms"]
     )
 
@@ -40,7 +40,7 @@ if "audio_isolation.core" not in sys.modules:
 if "audio_isolation.core.acoustic_extractor" not in sys.modules:
     stub_module = types.ModuleType("audio_isolation.core.acoustic_extractor")
     stub_module.ACOUSTIC_COLUMN_NAMES = ACOUSTIC_COLUMN_NAMES
-    stub_module.HuBERTAcousticExtractor = None
+    stub_module.WavLMAcousticExtractor = None
     sys.modules["audio_isolation.core.acoustic_extractor"] = stub_module
 
 from analytics.dynamic_window_engine import DynamicWindowEngine as DynamicWindowEngineMs

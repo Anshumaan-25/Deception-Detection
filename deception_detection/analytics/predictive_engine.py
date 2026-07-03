@@ -28,6 +28,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 
+# Canonical acoustic schema — imported rather than duplicated so a future
+# acoustic-model swap only needs to change acoustic_extractor.py.
+from audio_isolation.core.acoustic_extractor import ACOUSTIC_COLUMN_NAMES
+
 # ═══════════════════════════════════════════════════════════════════
 # 0. HARD CUDA GATE — No Fallbacks, No CPU Alternatives
 # ═══════════════════════════════════════════════════════════════════
@@ -58,7 +62,7 @@ logger = logging.getLogger("PredictiveEngine")
 #
 # The schema is partitioned into two modality vectors for the TFN:
 #   VISUAL:   Kinematic + Facial AU + Blink + Co-occurrence + FFT (114 cols)
-#   ACOUSTIC: HuBERT Layer 7 paralinguistic embeddings (20 cols)
+#   ACOUSTIC: WavLM paralinguistic embeddings (20 cols)
 #
 # Both are linearly projected into a shared 70-dimensional latent space
 # before the Cartesian Outer Product to yield the [71, 71] interaction matrix.
@@ -121,12 +125,8 @@ VISUAL_COLUMNS = (
     + _COOCCURRENCE_COLUMNS + _FFT_COLUMNS
 )
 
-# --- Acoustic modality: 20 columns ---
-ACOUSTIC_COLUMNS = (
-    ["acoustic_volatility", "prosodic_velocity"]
-    + [f"hubert_latent_{i}" for i in range(16)]
-    + ["vocal_entropy", "acoustic_energy_rms"]
-)
+# --- Acoustic modality: 20 columns (canonical schema imported above) ---
+ACOUSTIC_COLUMNS = list(ACOUSTIC_COLUMN_NAMES)
 
 VISUAL_DIM = len(VISUAL_COLUMNS)    # 114
 ACOUSTIC_DIM = len(ACOUSTIC_COLUMNS)  # 20
@@ -189,7 +189,7 @@ class CalibratedSessionLoader:
             raise RuntimeError(
                 f"FATAL: {len(missing_acoustic)} acoustic columns missing from calibrated CSV. "
                 f"First 5: {missing_acoustic[:5]}. "
-                f"This indicates the HuBERT extractor did not execute."
+                f"This indicates the WavLM extractor did not execute."
             )
 
         logger.info(

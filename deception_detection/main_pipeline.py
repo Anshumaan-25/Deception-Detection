@@ -16,12 +16,13 @@ from openface_pipeline.api.extractor import OpenFaceExtractor
 from audio_isolation.core.diarizer_engine import MediaPipeAudioDiarizer
 from audio_isolation.core.diarization_bridge import DiarizationBridge
 
-# --- Acoustic Feature Extraction (HuBERT Layer 7) ---
-from audio_isolation.core.acoustic_extractor import HuBERTAcousticExtractor
+# --- Acoustic Feature Extraction (WavLM) ---
+from audio_isolation.core.acoustic_extractor import WavLMAcousticExtractor, WAVLM_MODEL_NAME, WAVLM_LAYER_INDEX
 
 # --- Downstream Analytics Engines ---
 from analytics.dynamic_window_engine import DynamicWindowEngine
-from analytics.baseline_calibrator import BaselineCalibrator
+from analytics.baseline_calibrator import BaselineCalibrator, BaselineCalibrationError
+from analytics.recording_assembler import assemble_recording
 from analytics.context_mapper import ContextMapper
 
 # --- Headless Tracking Hooks ---
@@ -259,7 +260,7 @@ class MultimodalProductionOrchestrator:
                     "AU25": np.nan, "AU26": np.nan,
                 })
 
-    def process_video_session(self, canonical_mp4_path: str, canonical_wav_path: str, session_id: str, session_manifest_path: str = None, pyannote_segments: list = None):
+    def process_video_session(self, canonical_mp4_path: str, canonical_wav_path: str, session_id: str, session_manifest_path: str = None, pyannote_segments: list = None, calibrate: bool = True):
         """
         Unified End-to-End Session Orchestrator.
 
@@ -270,7 +271,7 @@ class MultimodalProductionOrchestrator:
                 Stream video frames through B=16 GPU chunks (YOLOv8 TensorRT
                 tracking → FaceLock identity → 12-worker MediaPipe pool +
                 OpenFace MLT). Execute cross-modal speaker isolation and
-                boot HuBERT Layer 7 acoustic microservice on isolated audio.
+                boot WavLM acoustic microservice on isolated audio.
 
             Phase 2 — Raw Feature Compilation:
                 Fuse pose, facial, and gaze records into a synchronized 30fps
@@ -278,7 +279,7 @@ class MultimodalProductionOrchestrator:
 
             Phase 3 — Sliding Window Aggregation:
                 DynamicWindowEngine (2s windows, 1s stride) applies confidence-
-                weighted regularization, injects HuBERT acoustic features,
+                weighted regularization, injects WavLM acoustic features,
                 and computes 36-column FFT behavioral periodicity metrics.
 
             Phase 4 — Baseline Calibration:
@@ -443,14 +444,14 @@ class MultimodalProductionOrchestrator:
             }
             master_manifest["outputs"]["isolated_target_audio"] = str(isolated_wav_path)
 
-            # ── Boot HuBERT Acoustic Feature Extractor ───────────────
-            print("--- BOOTING HuBERT ACOUSTIC MICROSERVICE ---")
-            acoustic_extractor = HuBERTAcousticExtractor(str(isolated_wav_path))
+            # ── Boot WavLM Acoustic Feature Extractor ───────────────
+            print("--- BOOTING WAVLM ACOUSTIC MICROSERVICE ---")
+            acoustic_extractor = WavLMAcousticExtractor(str(isolated_wav_path))
 
             master_manifest["stages"]["acoustic_extraction"] = {
                 "status": "success",
-                "model": "facebook/hubert-base-ls960",
-                "layer": 7,
+                "model": WAVLM_MODEL_NAME,
+                "layer": WAVLM_LAYER_INDEX,
                 "audio_duration_ms": acoustic_extractor.total_duration_ms,
             }
 
@@ -481,7 +482,7 @@ class MultimodalProductionOrchestrator:
             # ═════════════════════════════════════════════════════════
             # PHASE 3: Sliding Window Aggregation
             #   → Confidence-Weighted Fusion (Target #15)
-            #   → HuBERT Acoustic Injection (Target #13)
+            #   → WavLM Acoustic Injection (Target #13)
             #   → FFT Behavioral Periodicity (Target #16)
             # ═════════════════════════════════════════════════════════
             print(f"\n--- PHASE 3: WINDOW AGGREGATION (Confidence + Acoustic + FFT) ---")
@@ -529,34 +530,48 @@ class MultimodalProductionOrchestrator:
 
             # ═════════════════════════════════════════════════════════
             # PHASE 4: Baseline Calibration (Z-Score Normalization)
+            #   Skipped in recording mode: the orchestrator calibrates
+            #   every clip against the dedicated baseline clip's stats
+            #   (see process_recording_session), not each clip against
+            #   its own first 30 seconds.
             # ═════════════════════════════════════════════════════════
-            print(f"\n--- PHASE 4: BASELINE CALIBRATION ---")
+            if calibrate:
+                print(f"\n--- PHASE 4: BASELINE CALIBRATION ---")
 
-            calibrator = BaselineCalibrator(calibration_duration_ms=30000.0)
+                calibrator = BaselineCalibrator(calibration_duration_ms=30000.0)
 
-            calibrated_result = calibrator.calibrate(
-                windowed_csv_path=str(windowed_csv_path),
-                output_csv_path=str(calibrated_csv_path),
-            )
-
-            if calibrated_result is None:
-                raise RuntimeError(
-                    "Baseline calibration failed — windowed CSV may be missing or empty."
+                calibrated_result = calibrator.calibrate(
+                    windowed_csv_path=str(windowed_csv_path),
+                    output_csv_path=str(calibrated_csv_path),
                 )
 
-            # Read back to count calibrated features for manifest
-            calibrated_df = pd.read_csv(calibrated_csv_path)
-            baseline_mask = calibrated_df["start_time_ms"] < 30000.0
-            baseline_window_count = int(baseline_mask.sum())
+                if calibrated_result is None:
+                    raise RuntimeError(
+                        "Baseline calibration failed — windowed CSV may be missing or empty."
+                    )
 
-            master_manifest["stages"]["baseline_calibration"] = {
-                "status": "success",
-                "baseline_windows": baseline_window_count,
-                "calibrated_features": len(calibrated_df.columns),
-            }
-            master_manifest["outputs"]["calibrated_features"] = str(calibrated_csv_path)
+                # Read back to count calibrated features for manifest
+                calibrated_df = pd.read_csv(calibrated_csv_path)
+                baseline_mask = calibrated_df["start_time_ms"] < 30000.0
+                baseline_window_count = int(baseline_mask.sum())
 
-            print(f"✅ Baseline Calibration Complete: {baseline_window_count} baseline windows used.")
+                master_manifest["stages"]["baseline_calibration"] = {
+                    "status": "success",
+                    "baseline_windows": baseline_window_count,
+                    "calibrated_features": len(calibrated_df.columns),
+                }
+                master_manifest["outputs"]["calibrated_features"] = str(calibrated_csv_path)
+
+                print(f"✅ Baseline Calibration Complete: {baseline_window_count} baseline windows used.")
+                final_output_path = calibrated_csv_path
+            else:
+                print(f"\n--- PHASE 4: SKIPPED (recording mode — calibration deferred to orchestrator) ---")
+                baseline_window_count = "deferred"
+                master_manifest["stages"]["baseline_calibration"] = {
+                    "status": "skipped",
+                    "reason": "recording_mode_deferred_to_orchestrator",
+                }
+                final_output_path = windowed_csv_path
 
             # ═════════════════════════════════════════════════════════
             # PIPELINE COMPLETE
@@ -569,7 +584,7 @@ class MultimodalProductionOrchestrator:
             print(f"     Windows:          {total_windows}")
             print(f"     Feature Columns:  {total_feature_cols}")
             print(f"     Baseline Windows: {baseline_window_count}")
-            print(f"     Output:           {calibrated_csv_path}")
+            print(f"     Output:           {final_output_path}")
             print(f"{'='*60}")
 
         except Exception as e:
@@ -589,18 +604,35 @@ class MultimodalProductionOrchestrator:
             print(f"📋 Manifest written to: {manifest_path}")
 
     def process_recording_session(self, clips, recording_id, diarization_output_json,
-                                  *, offset_ms: int = 0, clock: str = "local"):
+                                  *, offset_ms: int = 0, clock: str = "local",
+                                  session_manifest_path: str = None,
+                                  baseline_file_index: int = 0):
         """
-        Batch entrypoint (audio-diarization merge).
+        Batch entrypoint (audio-diarization merge + Phase A calibration).
 
-        One recording = N clips that share a single audio-diarization enrollment.
-        Runs the per-clip deception cascade for each clip, feeding it the
-        verified target-speech segments the audio-diarization pipeline produced
-        for that specific clip (mapped by filename → file_index).
+        One recording = N clips that share a single audio-diarization
+        enrollment, where the clip at ``baseline_file_index`` (default 0) is
+        the DEDICATED BASELINE VIDEO: the target answering generic/neutral
+        questions before the interview proper. The flow:
+
+            1. Per-clip cascade (extraction + windowing) for every clip, with
+               per-clip self-calibration SKIPPED (calibrate=False).
+            2. Fit baseline stats on the baseline clip's windowed CSV — every
+               window of the whole clip, no duration cap. Fails loudly
+               (BaselineCalibrationError) if the baseline clip is unusable:
+               a recording without a baseline has no meaningful deviations.
+            3. Apply those stats to every clip (baseline included — its own
+               deviations land near 0, a built-in sanity check).
+            4. Assemble the recording-level CSV: rebase per-clip times by the
+               diarization file_offset_ms, concatenate, renumber window_ids,
+               rank deviation_percentile over the whole recording.
+
+        Windows never cross clip boundaries: windowing runs per clip, so the
+        hard break is automatic.
 
         Args:
-            clips: list of (canonical_mp4_path, canonical_wav_path) pairs, in any
-                order; each is mapped to its diarization file_index by stem.
+            clips: list of (canonical_mp4_path, canonical_wav_path) pairs, in
+                any order; each is mapped to its diarization file_index by stem.
             recording_id: id for this recording. Per-clip session ids are
                 f"{recording_id}_{file_index:03d}".
             diarization_output_json: path to the audio-diarization
@@ -608,30 +640,101 @@ class MultimodalProductionOrchestrator:
             offset_ms: per-recording time-alignment offset (MERGE_INTEGRATION_PLAN
                 §7); default 0.
             clock: "local" — per-clip timeline (correct for per-clip processing).
+            session_manifest_path: optional investigative session manifest for
+                ContextMapper phase/question labels (previously never wired in
+                batch mode — pre-existing bug, fixed here).
+            baseline_file_index: which diarization file_index is the baseline
+                video. Default 0 (baseline clip named to sort first in the
+                diarization batch's canonical order); override via
+                session_profile.json for mis-named batches.
 
-        NOTE (parked): per-clip outputs only. Combined-per-recording assembly on a
-        global timeline and baseline calibration are deferred pending design.
+        Returns a dict: per-clip results plus the recording-level artifact paths.
         """
         bridge = DiarizationBridge.from_output_json(diarization_output_json)
-        results = []
+
+        # ── Pass 1: per-clip cascade, calibration deferred ────────────
+        processed = []
         for canonical_mp4, canonical_wav in clips:
             file_index = bridge.index_for_clip(canonical_mp4)
             segments = bridge.segments_for(file_index, clock=clock, offset_ms=offset_ms)
             session_id = f"{recording_id}_{file_index:03d}"
-            print(f"\n>> Recording '{recording_id}': clip file_index={file_index}, "
+            role = "BASELINE" if file_index == baseline_file_index else "interview"
+            print(f"\n>> Recording '{recording_id}': clip file_index={file_index} ({role}), "
                   f"{len(segments)} target segment(s) → session {session_id}")
             self.process_video_session(
                 canonical_mp4_path=str(canonical_mp4),
                 canonical_wav_path=str(canonical_wav),
                 session_id=session_id,
+                session_manifest_path=session_manifest_path,
                 pyannote_segments=segments,
+                calibrate=False,
             )
-            results.append({
+            session_dir = self.output_root / session_id
+            processed.append({
                 "file_index": file_index,
                 "session_id": session_id,
                 "segment_count": len(segments),
+                "windowed_csv": session_dir / f"{session_id}_windowed_features.csv",
             })
-        return results
+        processed.sort(key=lambda r: r["file_index"])
+
+        # ── Pass 2: fit baseline on the dedicated calibration clip ───
+        baseline = next(
+            (r for r in processed if r["file_index"] == baseline_file_index), None
+        )
+        if baseline is None:
+            raise BaselineCalibrationError(
+                f"Recording '{recording_id}': no clip has baseline_file_index="
+                f"{baseline_file_index}; indices present: "
+                f"{[r['file_index'] for r in processed]}"
+            )
+        calibrator = BaselineCalibrator()
+        stats = calibrator.fit(str(baseline["windowed_csv"]))  # raises if unusable
+
+        recording_dir = self.output_root / recording_id
+        recording_dir.mkdir(parents=True, exist_ok=True)
+        stats_path = recording_dir / f"{recording_id}_baseline_stats.json"
+        stats.to_json(str(stats_path))
+
+        # ── Pass 3: apply baseline stats to every clip ────────────────
+        for rec in processed:
+            if not rec["windowed_csv"].exists():
+                # Non-baseline clip failed upstream: skip it in assembly but
+                # keep the recording alive (its manifest records the failure).
+                print(f"⚠️ Recording '{recording_id}': windowed CSV missing for "
+                      f"{rec['session_id']} — clip excluded from assembly.")
+                continue
+            calibrated_csv = (self.output_root / rec["session_id"]
+                              / f"{rec['session_id']}_calibrated_features.csv")
+            calibrator.apply(str(rec["windowed_csv"]), stats, str(calibrated_csv))
+            rec["calibrated_csv"] = calibrated_csv
+
+        # ── Pass 4: assemble the recording-level CSV ──────────────────
+        assembly_inputs = [
+            {
+                "file_index": rec["file_index"],
+                "csv_path": str(rec["calibrated_csv"]),
+                "offset_ms": bridge.file_offset_ms(rec["file_index"]),
+            }
+            for rec in processed if "calibrated_csv" in rec
+        ]
+        recording_csv = recording_dir / f"{recording_id}_recording_calibrated.csv"
+        assemble_recording(assembly_inputs, str(recording_csv))
+
+        print(f"\n🏁 Recording '{recording_id}' complete: "
+              f"{len(assembly_inputs)}/{len(processed)} clip(s) assembled, "
+              f"baseline={stats.baseline_window_count} windows (file_index "
+              f"{baseline_file_index}).")
+        return {
+            "recording_id": recording_id,
+            "baseline_file_index": baseline_file_index,
+            "baseline_stats_json": str(stats_path),
+            "recording_calibrated_csv": str(recording_csv),
+            "clips": [
+                {k: str(v) if isinstance(v, Path) else v for k, v in rec.items()}
+                for rec in processed
+            ],
+        }
 
 
 if __name__ == "__main__":

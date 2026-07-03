@@ -1,7 +1,81 @@
+import json
 import pandas as pd
 import numpy as np
+from dataclasses import dataclass, asdict
 from pathlib import Path
+from typing import Dict
 import logging
+
+
+# Columns that are never behavioral features: window bookkeeping, context labels,
+# provenance columns added by the recording assembler, and derived deviation
+# outputs. Used by the recording-mode fit/apply path. (The legacy single-clip
+# calibrate() keeps its historical, narrower list for output parity — note that
+# it therefore z-scores question_id / phase_elapsed_ms, a pre-existing wart.)
+NON_FEATURE_COLUMNS = [
+    'window_id', 'start_time_ms', 'end_time_ms',
+    'frame_count', 'cumulative_confidence', 'blink_count',
+    'emotion_label_mode',
+    'context_phase', 'question_id', 'phase_elapsed_ms',
+    'file_index', 'clip_window_id',
+    'deviation_magnitude', 'deviation_percentile',
+    'target_ground_truth',
+]
+
+
+class BaselineCalibrationError(RuntimeError):
+    """The dedicated baseline clip cannot support calibration (recording mode
+    fails loudly — uncalibrated deviations must never masquerade as calibrated)."""
+
+
+@dataclass
+class BaselineStats:
+    """Frozen per-feature baseline statistics fitted on the dedicated
+    baseline/calibration clip. Persisted as JSON next to the recording outputs
+    so any later run can reproduce the exact normalization."""
+
+    feature_means: Dict[str, float]
+    feature_stds: Dict[str, float]  # NaN where the baseline was constant (zero std)
+    baseline_window_count: int
+    source_csv: str
+
+    def to_json(self, path: str) -> str:
+        payload = asdict(self)
+        # NaN is not valid JSON — encode as null, decode back to NaN in from_json.
+        payload["feature_stds"] = {
+            k: (None if isinstance(v, float) and np.isnan(v) else v)
+            for k, v in self.feature_stds.items()
+        }
+        payload["feature_means"] = {
+            k: (None if isinstance(v, float) and np.isnan(v) else v)
+            for k, v in self.feature_means.items()
+        }
+        with open(path, "w") as f:
+            json.dump(payload, f, indent=4)
+        return str(path)
+
+    @classmethod
+    def from_json(cls, path: str) -> "BaselineStats":
+        with open(path, "r") as f:
+            payload = json.load(f)
+        payload["feature_stds"] = {
+            k: (np.nan if v is None else float(v))
+            for k, v in payload["feature_stds"].items()
+        }
+        payload["feature_means"] = {
+            k: (np.nan if v is None else float(v))
+            for k, v in payload["feature_means"].items()
+        }
+        return cls(**payload)
+
+
+def _feature_columns(df: pd.DataFrame) -> list:
+    """Numeric columns that are behavioral features (recording-mode rule)."""
+    return [
+        c for c in df.columns
+        if c not in NON_FEATURE_COLUMNS
+        and df[c].dtype in ['float64', 'float32', 'int64', 'int32']
+    ]
 
 
 class BaselineCalibrator:
@@ -149,6 +223,105 @@ class BaselineCalibrator:
 
         self.logger.info(f"✅ Baseline Calibration Complete. Output saved to: {output_csv_path}")
         return output_csv_path
+
+    # ──────────────────────────────────────────────────────────────────
+    # Recording mode (Phase A): fit on the dedicated baseline clip,
+    # apply to every clip. The legacy calibrate() above stays untouched
+    # for the single-clip path.
+    # ──────────────────────────────────────────────────────────────────
+
+    def fit(self, baseline_windowed_csv: str) -> BaselineStats:
+        """
+        Fit per-feature baseline statistics from the dedicated baseline clip.
+
+        Uses EVERY window of the clip (no duration cap — the whole video is
+        generic/neutral by design). Raises BaselineCalibrationError if the
+        clip cannot support calibration: fewer than 2 windows, or no feature
+        produced any usable (non-NaN) data.
+        """
+        path = Path(baseline_windowed_csv)
+        if not path.exists():
+            raise BaselineCalibrationError(
+                f"Baseline windowed CSV not found: {path}. The baseline clip "
+                f"failed upstream — recording cannot be calibrated."
+            )
+
+        df = pd.read_csv(path)
+        if len(df) < 2:
+            raise BaselineCalibrationError(
+                f"Baseline clip yielded {len(df)} window(s); need >= 2 to "
+                f"estimate variance. Re-record or fix the baseline video."
+            )
+
+        feature_cols = _feature_columns(df)
+        means = df[feature_cols].mean()
+        stds = df[feature_cols].std()
+
+        # Zero-std → NaN: a feature constant during baseline cannot be
+        # z-scored; NaN marks it uncalibrateable (same guard as calibrate()).
+        zero_std = stds[stds == 0].index.tolist()
+        if zero_std:
+            self.logger.warning(
+                f"Constant features during baseline (zero std): {zero_std}. "
+                f"These will be NaN in calibrated output."
+            )
+        stds = stds.replace(0, np.nan)
+
+        if means.isna().all():
+            raise BaselineCalibrationError(
+                "Every feature is NaN across the baseline clip (all windows "
+                "nullified?). Baseline is unusable — recording cannot be "
+                "calibrated."
+            )
+
+        self.logger.info(
+            f"Baseline fitted: {len(df)} windows (whole clip), "
+            f"{len(feature_cols)} features, from {path.name}"
+        )
+        return BaselineStats(
+            feature_means={k: float(v) for k, v in means.items()},
+            feature_stds={k: float(v) for k, v in stds.items()},
+            baseline_window_count=len(df),
+            source_csv=str(path),
+        )
+
+    def apply(self, windowed_csv_path: str, stats: BaselineStats,
+              output_csv_path: str) -> str:
+        """
+        Z-score a clip's windowed features against fitted baseline stats.
+
+        Applied to interview clips AND the baseline clip itself (whose
+        deviations land near 0 by construction — a built-in sanity check).
+        Adds deviation_magnitude; deviation_percentile is deliberately NOT
+        computed here — a percentile rank is only meaningful over the whole
+        recording, so the recording assembler computes it after concatenation.
+        """
+        df = pd.read_csv(windowed_csv_path)
+
+        feature_cols = _feature_columns(df)
+        fitted = [c for c in feature_cols if c in stats.feature_means]
+        unfitted = [c for c in feature_cols if c not in stats.feature_means]
+        if unfitted:
+            self.logger.warning(
+                f"{len(unfitted)} feature column(s) absent from baseline stats "
+                f"(left raw): {unfitted[:5]}"
+            )
+
+        means = pd.Series({c: stats.feature_means[c] for c in fitted})
+        stds = pd.Series({c: stats.feature_stds[c] for c in fitted})
+
+        df_calibrated = df.copy()
+        df_calibrated[fitted] = (df[fitted] - means) / stds
+
+        z_scores = df_calibrated[fitted]
+        df_calibrated['deviation_magnitude'] = np.sqrt((z_scores ** 2).sum(axis=1))
+
+        df_calibrated.to_csv(output_csv_path, index=False)
+        self.logger.info(
+            f"✅ Applied baseline stats ({stats.baseline_window_count} baseline "
+            f"windows) to {Path(windowed_csv_path).name} → {output_csv_path}"
+        )
+        return str(output_csv_path)
 
 
 # --- Execution Block ---

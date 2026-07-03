@@ -6,9 +6,9 @@ correctly through the deception pipeline's audio-isolation seam — the path tha
 replaces mock_pyannote_segments at main_pipeline.py:384.
 
 Exercises the ACTUAL deception consumer (MediaPipeAudioDiarizer) with bridge
-output + synthetic audio/lip data. No GPU, no torch, no HuBERT — the
+output + synthetic audio/lip data. No GPU, no torch, no WavLM — the
 anchor+isolation path is pure numpy/scipy, so the whole audio side of the merge
-is testable here. (The HuBERT/visual stages need a GPU end-to-end run; that's
+is testable here. (The WavLM/visual stages need a GPU end-to-end run; that's
 Phase 4.)
 
 Checks:
@@ -118,7 +118,7 @@ def main() -> int:
         print("✅ 4. empty-target ([]) → TARGET_SILENT → whole track attenuated")
 
     print("\nmerge seam verification OK — real diarization segments flow through "
-          "anchor + isolation (GPU/HuBERT not required).")
+          "anchor + isolation (GPU/WavLM not required).")
     return 0
 
 
