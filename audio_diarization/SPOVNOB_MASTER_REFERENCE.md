@@ -35,7 +35,7 @@
 - **Part 9 — The five models** (ECAPA-TDNN, InsightFace, YOLOv8, Silero VAD, PyAnnote OVD)
 - **Part 10 — Complete parameter reference** (every constant, value, operator, rationale)
 - **Part 11 — Manifest operation vocabulary** (every entry type)
-- **Part 12 — Setup & deployment** (Ubuntu guide + the seven gotchas)
+- **Part 12 — Setup & deployment** (Ubuntu guide + the six gotchas)
 - **Part 13 — The self-test architecture**
 - **Part 14 — Bench-validation register & known limitations**
 - **Appendix A — File-by-file line/function map**
@@ -1754,7 +1754,7 @@ Recommended install root `/opt/spovnob/` with `code/`, `.venv/`, `wheelhouse/`, 
 6. **Verify:** `environment_gate.py --run` (the go/no-go). Success: *"environment gate PASSED — all
    checks recorded in manifest."*
 
-**The seven setup gotchas (consolidated from `Ubuntu_Setup_Gotchas.md`):**
+**The six setup gotchas (consolidated from `Ubuntu_Setup_Gotchas.md`):**
 1. **PyTorch CUDA libs are hidden inside the `torch` pip package** → export their dir to
    `LD_LIBRARY_PATH` (this is what `env.sh` does).
 2. **ONNXRuntime silently installs the CUDA-11.8 wheel** because PyPI has the same version number →
@@ -1766,10 +1766,9 @@ Recommended install root `/opt/spovnob/` with `code/`, `.venv/`, `wheelhouse/`, 
    which is outside the hash registry.
 4. **`expected_hashes.json` permission denied on re-freeze** → it is chmod 444 on purpose; `rm -f` it
    first.
-5. (Node.js for Claude Code — environment-only, not pipeline.)
-6. **The `ManifestTimeError` Layer 0 crash — already fixed** in commit `7dc3daa` (nested
+5. **The `ManifestTimeError` Layer 0 crash — already fixed** in commit `7dc3daa` (nested
    `silero_segments` shape); just `git pull`, do not apply the old manual rename.
-7. **The 2d106det landmark indices — already fixed** in `params.py` (the corrected
+6. **The 2d106det landmark indices — already fixed** in `params.py` (the corrected
    `(71,63,68)/(62,54,57)/(52,61)` MAR pairs; +3 windows, +7 250 ms clean audio).
 
 ---

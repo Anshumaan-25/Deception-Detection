@@ -43,16 +43,7 @@ python environment_gate.py --freeze-hashes --model-store ~/model_store
 
 ---
 
-### 5. Claude Code / Node.js Installation Failures
-**The Problem:** The default `nodejs` package in Ubuntu 22.04 is v12.x, but Claude Code requires v18+. Trying to install Claude Code out of the box will throw an `EBADENGINE` and `SyntaxError: Unexpected token '.'` error.
-**The Fix:** You must install Node.js v20 via the NodeSource repository before installing Claude Code:
-```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
-sudo npm install -g @anthropic-ai/claude-code
-```
-
-### 6. The `ManifestTimeError` Pipeline Crash — FIXED IN REPO (no manual edit needed)
+### 5. The `ManifestTimeError` Pipeline Crash — FIXED IN REPO (no manual edit needed)
 **The Problem:** `session_manifest.py` enforces Rule 6: any dictionary key ending in `_ms` must hold an integer. `layer0_preprocessor.py` used to log a *list* of segment pairs under the key `silero_segments_local_ms`, which crashed the pipeline at the first Layer 0 manifest write.
 **The Fix (already shipped):** Fixed properly in commit `7dc3daa` — the payload key is now `silero_segments`, holding nested `{"start_ms": ..., "end_ms": ...}` dicts, so Rule 6 actively validates every segment boundary as an integer instead of being bypassed. The shape is covered by `python3 layer0_preprocessor.py --selftest`. **On the server, just `git pull` — do not apply the old manual rename to `silero_segments_list`; that workaround is superseded.**
 
@@ -60,7 +51,7 @@ sudo npm install -g @anthropic-ai/claude-code
 
 ---
 
-### 7. InsightFace 2d106det Landmark Indices — Document Mapping is Wrong
+### 6. InsightFace 2d106det Landmark Indices — Document Mapping is Wrong
 **The Problem:** The architecture doc specifies `upper_inner_lip=(52,53,54)`, `lower_inner_lip=(61,62,63)`, `mouth_width_pair=(52,61)`. These are wrong: `eu(52,61)` is the ~80px horizontal left-to-right corner distance, which appears in the *numerator* alongside the other pairs, making MAR ~constant at 0.44–0.57 regardless of whether the mouth is open or closed. The window machine could never close windows reliably and produced a single 66-second mega-window.
 Additionally, indices 72–86 are **nose landmarks**, not inner lip — the 2d106det model provides outer lip contour only (52–71); there are no dedicated inner lip points.
 

@@ -37,9 +37,6 @@ wheelhouse/
 hash_registry.json
 expected_hashes.json
 
-# --- Local tool settings ---------------------------------------------------------------
-.claude/settings.local.json
-
 # --- OS / editor junk -------------------------------------------------------------------
 .DS_Store
 
