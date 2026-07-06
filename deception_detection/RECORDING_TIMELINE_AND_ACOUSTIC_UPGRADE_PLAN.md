@@ -1,9 +1,10 @@
 # Recording-Level Global Timeline, Baseline Calibration & Acoustic-Model Upgrade — Plan
 
-> **Status:** Authored 2026-07-01. **Phase B (WavLM swap) implemented 2026-07-02** — see §4.3.
-> **Phase A redesigned 2026-07-02** after the production data model was clarified (see §2) —
-> baseline now comes from a dedicated calibration clip, and ELAN batch injection is dropped from
-> scope. Phase A is next; not started.
+> **Status:** Authored 2026-07-01. **Both phases implemented 2026-07-02** — Phase B (WavLM swap,
+> §4.3) and Phase A (baseline-clip calibration + recording assembly, §3.5, after the production
+> data model was corrected — see §2: baseline comes from a dedicated calibration clip, and ELAN
+> batch injection is dropped from scope entirely). Committed as `92adbd3` (2026-07-03). Remaining
+> work is all real-footage validation debt (§7's closing note) — no design or code work is open.
 > **Scope:** (A) baseline-clip-driven calibration + recording-level global timeline in
 > `process_recording_session`. (B) Replace HuBERT with WavLM in the acoustic extractor. (C) Flag
 > VideoMAE v2 as deferred future work.
