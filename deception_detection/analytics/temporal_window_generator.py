@@ -252,8 +252,22 @@ class TemporalWindowEngine:
                     record["postural_freeze_index"] = np.nan
 
                 # --- WavLM Acoustic Feature Injection ---
+                # Gated by is_audio_active — see the identical comment in
+                # analytics/dynamic_window_engine.py (mirrored bug found +
+                # verified by review 2026-07-07): extract_window_features
+                # only nulls on the isolated WAV's own RMS floor, which is
+                # blind to who is speaking, so an attenuated-but-still-loud
+                # interviewer segment can leak through as if it were the
+                # target's own acoustic behavior.
                 if acoustic_extractor is not None:
-                    acoustic_features = acoustic_extractor.extract_window_features(start_time_ms, end_time_ms)
+                    target_speaking = True
+                    if "is_audio_active" in window_df.columns:
+                        active_frac = confidence_weighted_mean(window_df["is_audio_active"], weights, thresh)
+                        target_speaking = not np.isnan(active_frac) and active_frac >= 0.5
+                    if target_speaking:
+                        acoustic_features = acoustic_extractor.extract_window_features(start_time_ms, end_time_ms)
+                    else:
+                        acoustic_features = {col: np.nan for col in ACOUSTIC_COLUMN_NAMES}
                     record.update(acoustic_features)
                 else:
                     # No extractor provided: populate schema with NaN placeholders

@@ -63,10 +63,16 @@ class MultimodalProductionOrchestrator:
         self.facelock = FaceLock(engine_cache_dir=self.trt_cache_dir)
         self.target_locked = False
 
-    def compile_raw_features(self, pose_data: list, openface_data: list, output_csv_path: str):
+    def compile_raw_features(self, pose_data: list, openface_data: list, output_csv_path: str,
+                             acoustic_extractor=None):
         """
         Vectorizes kinematic math in-memory and outputs a pure 30 FPS frame-by-frame CSV.
         Leaves temporal windowing entirely to the downstream Layer 4 engine.
+
+        When an acoustic_extractor is provided, the frame-level acoustic block
+        (FRAME_ACOUSTIC_COLUMN_NAMES) is aligned onto the same master clock by
+        absolute-timestamp bucketing and masked by is_audio_active — this is
+        the cross-modal frame-level tensor the future ST-GAE consumes.
         """
         if not pose_data or not openface_data:
             print("⚠️ WARNING: Insufficient data for fusion.")
@@ -129,6 +135,25 @@ class MultimodalProductionOrchestrator:
         diar_c = fused_frames["diarizer_conf"].fillna(0.0)
         
         fused_frames["joint_confidence"] = yolo_c * fl_c * face_c * diar_c
+
+        # --- 4.5 Frame-Level Acoustic Injection (30 fps master clock) ---
+        # WavLM latents (20 ms hop) are pooled into each video frame's
+        # [t, t+33.3ms) interval by absolute-timestamp lookup — drift-free by
+        # construction (no index-ratio math; see frame_alignment.py). Frames
+        # where the target is not verifiably speaking (is_audio_active != 1,
+        # including NaN tracking gaps) are masked to NaN: attenuated-silence
+        # acoustics are not behavioral signal, and is_audio_active itself
+        # remains in the CSV as the mask for downstream masked-loss training.
+        if acoustic_extractor is not None:
+            frame_acoustics = acoustic_extractor.frame_features_for_timestamps(
+                fused_frames["timestamp"].to_numpy(dtype=np.float64)
+            )
+            active = fused_frames["is_audio_active"].to_numpy(dtype=np.float64) \
+                if "is_audio_active" in fused_frames.columns else None
+            for col, values in frame_acoustics.items():
+                if active is not None:
+                    values = np.where(active == 1.0, values, np.nan)
+                fused_frames[col] = values
 
         # --- 5. Save Raw High-Resolution Tensor ---
         fused_frames.to_csv(output_csv_path, index=False)
@@ -453,6 +478,8 @@ class MultimodalProductionOrchestrator:
                 "model": WAVLM_MODEL_NAME,
                 "layer": WAVLM_LAYER_INDEX,
                 "audio_duration_ms": acoustic_extractor.total_duration_ms,
+                "latent_frames": acoustic_extractor.latent_frame_count,
+                "architecture": "single_pass_cached",
             }
 
             # ═════════════════════════════════════════════════════════
@@ -461,7 +488,8 @@ class MultimodalProductionOrchestrator:
             print(f"\n--- PHASE 2: RAW FEATURE COMPILATION ---")
 
             raw_result = self.compile_raw_features(
-                pose_records, openface_records, str(fused_csv_path)
+                pose_records, openface_records, str(fused_csv_path),
+                acoustic_extractor=acoustic_extractor,
             )
 
             if raw_result is None:
