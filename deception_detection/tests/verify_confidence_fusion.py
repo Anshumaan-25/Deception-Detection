@@ -107,7 +107,7 @@ pose_yolo_conf = []
 face_lock_conf = []
 face_extractor_conf = []
 diarizer_speaker_conf = []
-motion_energy = []
+macro_motion_energy = []
 au1_intensities = []
 
 for idx in range(130):

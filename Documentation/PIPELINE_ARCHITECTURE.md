@@ -57,8 +57,8 @@ flowchart TB
         OF["OpenFace 3.0<br/>AUs + gaze"]
         ANCHOR["Cross-modal identity anchoring:<br/>lip activity × diarized segments → incongruence flags + diarizer confidence"]
         ISO["Isolated target-only WAV"]
-        WAVLM["WavLM acoustic extractor — wavlm-large, layer 14<br/>20-col schema: volatility, prosodic velocity, 16 latents, entropy, RMS"]
-        P2["Phase 2 — kinematic engineering + exact 30 fps frame fusion:<br/>hand-face distance, wrist + gaze velocity, AU onset velocity, motion energy"]
+        WAVLM["WavLM acoustic extractor — wavlm-large, layer 14<br/>ONE chunked full-clip pass → cached latent sequence<br/>window block: 20 cols | frame block: 18 frame_ cols on the 30 fps clock"]
+        P2["Phase 2 — kinematic engineering + exact 30 fps frame fusion:<br/>hand-face distance, wrist + gaze velocity, AU onset velocity, motion energy<br/>+ frame-level acoustic block — timestamp-bucketed, is_audio_active-masked"]
         P3["Phase 3 — DynamicWindowEngine — 2 s window / 1 s stride:<br/>confidence-weighted fusion + WavLM injection + FFT periodicity + ContextMapper"]
         WCSV["Per-clip windowed CSV — uncalibrated"]
         CANON --> STREAM --> YOLO --> FL
@@ -68,8 +68,9 @@ flowchart TB
         ANCHOR --> ISO --> WAVLM
         MP --> P2
         OF --> P2
+        WAVLM -->|frame block| P2
         P2 --> P3
-        WAVLM --> P3
+        WAVLM -->|window block| P3
         P3 --> WCSV
     end
     PAIR --> CANON
@@ -91,7 +92,7 @@ flowchart TB
 
     subgraph FUT["FUTURE — designed, not built"]
         VMAE["VideoMAE v2 — deep spatiotemporal latents<br/>4th parallel extractor branch"]
-        STGAE["ST-GAE — spatio-temporal graph autoencoder over raw synchronized<br/>30 fps frame-level features — fit per subject on baseline clip = normal,<br/>reconstruction error on interview clips = anomaly"]
+        STGAE["ST-GAE — spatio-temporal graph autoencoder over raw synchronized<br/>30 fps frame-level features INCL. the frame-level acoustic block —<br/>fit per subject on baseline clip = normal,<br/>reconstruction error on interview clips = anomaly<br/>acoustic nodes masked by is_audio_active in the loss"]
         REPORT["Temporal Anomaly Attribution Report:<br/>timestamped cognitive-friction segments<br/>+ node-wise reconstruction-error map"]
         VMAE --> STGAE --> REPORT
     end

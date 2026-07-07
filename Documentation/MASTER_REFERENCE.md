@@ -165,13 +165,23 @@ diarized speech with observed lip motion, producing per-frame `is_audio_active`,
 `mismatch_incongruence` (audio active, lips still), `silent_incongruence` (lips moving, no audio),
 `diarizer_conf`. Isolation then writes the **target-only WAV**, which boots the
 **WavLMAcousticExtractor** (`microsoft/wavlm-large`, layer 14 — see §12 for the re-tune debt).
+Since 2026-07-07 the extractor is **single-pass**: one chunked+batched full-clip forward (30 s
+chunks, 1 s context halo trimmed by absolute center time, fp16 autocast, encoder truncated above
+layer 14 — profile tuned for the RTX 6000 Ada production box) caches the layer-14 latent sequence
+in RAM; the window-level and frame-level consumers below are then pure numpy over that cache
+(previously every 2 s window ran its own WavLM forward — 2× redundant at 1 s stride).
 
 **Phase 2 — Raw feature compilation** (`compile_raw_features`).
 Vectorized kinematics: 3D hand-to-face distance (L/R), 3D wrist velocity (L/R), gaze velocity,
 AU onset velocity (AU1/2/4/6/9/12/25/26 — genuine expression onsets run ~250–500 ms; posed ones
 don't), 7-landmark `macro_motion_energy`. Exact frame-by-frame inner join of pose × OpenFace on
-the shared master-clock timestamp → **30 fps fused CSV**. *(This frame-level CSV is the planned
-input of the future ST-GAE — §13.)*
+the shared master-clock timestamp, then **frame-level acoustic injection**: the 18-column
+`frame_*` block (`audio_isolation/core/frame_alignment.py`) pools WavLM latents into each video
+frame's 33.3 ms interval by **absolute-timestamp bucketing** (searchsorted over latent-frame
+centers — drift-free by construction, no index-ratio math), masked to NaN wherever
+`is_audio_active != 1` or the waveform sits below the attenuation floor. Output: **30 fps fused
+CSV**. *(This frame-level CSV — now cross-modal — is the planned input of the future ST-GAE, with
+`is_audio_active` as the acoustic-node loss mask — §14.)*
 
 **Phase 3 — Sliding-window aggregation** (`DynamicWindowEngine`).
 Parameters: 2000 ms window, 1000 ms stride, `min_fill_rate=0.25` (windows with < 15 of 60
@@ -249,6 +259,13 @@ Feature families (all confidence-weighted):
 - **Calibration outputs**: z-scored versions of all of the above + `deviation_magnitude`,
   `deviation_percentile` (recording-level only)
 
+**Frame-level acoustic family — raw 30 fps CSV only, never windowed** (canonical source
+`frame_alignment.FRAME_ACOUSTIC_COLUMN_NAMES`, 18 cols): `frame_wavlm_latent_0..15`,
+`frame_prosodic_velocity`, `frame_acoustic_energy_rms`. Aligned per video frame by absolute
+timestamp bucketing, NaN wherever the target is not verifiably speaking (`is_audio_active` is the
+mask column). The `frame_` prefix keeps them disjoint from `DynamicWindowEngine`'s explicit
+aggregation list, so the windowed schema is untouched.
+
 ## 11. Environments, hardware & model stack
 
 | | audio_diarization | deception_detection |
@@ -274,6 +291,14 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
    24 layers), not re-tuned on real audio.
 3. No real end-to-end `process_recording_session` run through the GPU stack. Everything is
    verified against synthetic CSVs (§13); the orchestration wiring itself is compile-checked only.
+4. The 2026-07-07 single-pass WavLM rewrite (chunked full-clip forward, fp16 autocast, encoder
+   truncation, whole-clip normalization, ~30 s transformer context instead of per-2 s-window
+   forwards) is alignment-math-verified (§13) but has never executed on a GPU. Each optimization
+   is independently toggleable via `WavLMAcousticExtractor` kwargs / module constants — first
+   real-footage run should A/B `use_amp` and `truncate_encoder` against fp32 full-stack once.
+   An adversarial multi-agent review (2026-07-07, same day) found and fixed 8 real bugs in this
+   rewrite before it ever reached hardware — see the dedicated changelog entry below. All 8 now
+   have regression tests; none were hypothetical.
 
 **Dead code / warts:**
 
@@ -281,10 +306,21 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
   attribution-not-classification; ST-GAE replaces it). **Archived in place 2026-07-06**: entire
   file commented out under an ARCHIVED/SUPERSEDED header, kept (not deleted) as a record of the
   approach. Was never imported by anything (only referenced in `generate_manual_docx.py` prose).
-- `tests/verify_confidence_fusion.py` — pre-existing `NameError: macro_motion_energy` at line
-  ~120 (present before the WavLM swap; confirmed via git-stash test). Not yet fixed.
+- ~~`tests/verify_confidence_fusion.py` NameError~~ — **fixed 2026-07-07** (half-applied rename:
+  `motion_energy` declared, `macro_motion_energy` used).
 - `deception_detection/.venv/bin/pip` — broken symlink to the pre-restructure path
   (`~/Documents/Audio_Diarization/...`), stale since the mono-repo rename.
+- `openface_pipeline/detectors/{face_detector,landmark_detector}.py` — **clean-room
+  reconstructions (2026-07-07)**: the desktop originals were lost in the July transfer incident
+  (they exist in no git history, no local copy). Rebuilt against `api/extractor.py`'s call
+  contract, decode/alignment flows ported from OpenFace-3.0's own `demo2.py`/`demo.py`/
+  `STAR/demo.py`. Compile-verified only — never run on GPU. Recover the desktop originals if
+  possible and diff. Also: `unified_detector.py`'s top-level copy carries two relocation path
+  patches; `weights/trt_engines/MLT.engine` must be compiled on the production GPU box
+  (`tools/compile_pipeline_trt.py`) before OpenFace inference can run.
+- Desktop-only artifacts still unrecovered: `session/batch01/` real diarization fixture
+  (verify_diarization_bridge check 10 skips without it) and the audio-side model store
+  (`/home/user1/model_store` on the Ubuntu box) + `wheelhouse/`.
 - Legacy `calibrate()` z-scores `question_id`/`phase_elapsed_ms` (metadata) — pre-existing wart,
   kept for parity; the new fit/apply path excludes them correctly.
 - `tools/generate_manual_docx.py` prose still says HuBERT (cosmetic).
@@ -294,15 +330,18 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
 All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 `deception_detection/` with `python tests/verify_<name>.py`.
 
-| Script | Covers | Status (2026-07-02 run) |
+| Script | Covers | Status (2026-07-07 run, laptop, pandas 3.0.2) |
 |---|---|---|
-| `verify_diarization_bridge.py` | SPOVNOB JSON → seam contract (incl. real `session/batch01` fixture) | ✅ 10/10 |
+| `verify_diarization_bridge.py` | SPOVNOB JSON → seam contract (incl. real `session/batch01` fixture) | ✅ (check 10 skips — batch01 fixture is desktop-only) |
 | `verify_merge_seam.py` | seam semantics in `process_video_session` | ✅ |
 | `verify_recording_intake.py` | mp4/wav ↔ file_index pairing | ✅ |
 | `verify_end_to_end_pipeline.py` | full mocked cascade | ✅ 375/375 |
-| `verify_behavioral_periodicity.py` | FFT block | ✅ |
+| `verify_behavioral_periodicity.py` | FFT block | ✅ 80/80 |
 | `verify_recording_calibration.py` | fit/apply/BaselineStats/assembly (11 checks) | ✅ 11/11 |
-| `verify_confidence_fusion.py` | confidence-weighted math | ❌ pre-existing NameError (§12) |
+| `verify_confidence_fusion.py` | confidence-weighted math | ✅ 25/25 (NameError fixed 2026-07-07) |
+| `verify_frame_acoustics.py` | frame-level WavLM↔30fps alignment + window-formula parity + 8 bug regressions | ✅ 30/30 |
+| `verify_wavlm_truncation.py` | StableLayerNorm encoder-truncation correctness (tiny synthetic model, no GPU) | ✅ 9/9 |
+| `verify_acoustic_gating.py` | window-level acoustic block gated by `is_audio_active` | ✅ 4/4 |
 
 ## 14. Roadmap (future, in intended order — nothing scheduled)
 
@@ -344,3 +383,68 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   classification), TFN superseded; VideoMAE v2 deferred; real-footage validation on hold.
 - **2026-07-06** — `analytics/predictive_engine.py` archived in place (fully commented out with a
   superseded-approach header, per user instruction — not deleted).
+- **2026-07-07** — **Laptop restore of all gitignored sub-repos and runtime assets** from the
+  intact pre-merge originals in `~/Documents/SPOVNOB/` (copy, originals untouched): `mediapipe_pose/`,
+  `opencv_streaming/`, `ffmpeg_ingestion/` (each with its standalone `.git`), `OpenFace-3.0/`
+  (incl. `.git` — sole copy of the `extraction-api` branch — and all weights; 177 MB of test
+  scratch excluded), `weights/{yolov8n,yolov8m}.pt`, `Yolo_v8/PersonTracking4/weights/` (buffalo_l
+  ONNX pack, 341 MB), `SPOVNOB_intake/SESSION_TEST_MOCK` fixture (sha256-verified against its
+  generation log), three historical docs into `Documentation/`. All copies MD5/magic-verified;
+  every `main_pipeline.py`/`batch_daemon.py` project import now resolves on disk.
+- **2026-07-07** — **`openface_pipeline/` materialized as a top-level package** (the layout §3
+  documents): recovered `api/extractor.py` + `detectors/unified_detector.py` (newest surviving
+  working-tree versions; unified_detector got two relocation path patches), **reconstructed**
+  `detectors/face_detector.py` + `detectors/landmark_detector.py` (desktop originals lost — see
+  §12), new `__init__.py` sys.path bootstrap, RetinaFace + STAR weights copied to
+  `openface_pipeline/weights/`. `.gitignore`: added `deception_detection/openface_pipeline/weights/`.
+- **2026-07-07** — Test suite fully green (7/7, incl. pandas 3.0.2 compatibility): fixed
+  `verify_confidence_fusion.py` NameError (half-applied rename) and `verify_diarization_bridge.py`
+  macOS `/var`→`/private/var` tempdir-resolution assert.
+- **2026-07-07** — `MASTER_REFERENCE.md` + `PIPELINE_ARCHITECTURE.md` moved into `Documentation/`
+  alongside the Br-Clip-Flow diagram exports (user reorganization; §3 map and §15 table paths to
+  be updated when the move is committed).
+- **2026-07-07** — **Frame-level WavLM alignment (ST-GAE prerequisite) + single-pass rewrite.**
+  New `audio_isolation/core/frame_alignment.py` (pure-numpy, unit-testable): absolute-timestamp
+  bucketing of WavLM latents onto the 30 fps master clock (drift-free vs index-ratio math — a
+  29.97-treated-as-30 assumption would be seconds off at 1 h) + the window-formula math.
+  `acoustic_extractor.py` rewritten single-pass: one chunked/batched full-clip forward (30 s
+  chunks, 1 s halo, fp16 autocast, encoder truncated above layer 14, whole-clip normalization,
+  process-wide model singleton) caches layer-14 latents; window path (unchanged 20-col contract)
+  and new frame path both read the cache. `compile_raw_features` now injects the 18-column
+  `frame_*` block masked by `is_audio_active`. Hardware profile tuned for the production desktop
+  (RTX 6000 Ada 48 GB, 44 cores, 512 GB RAM, Ubuntu, R580/CUDA 12.x). New
+  `tests/verify_frame_acoustics.py` (20 checks); full suite 8/8. GPU execution still pending
+  (§12.4).
+- **2026-07-07** — **Adversarial multi-agent review of the single-pass WavLM rewrite — 8 bugs
+  found, verified, and fixed same-day, before any GPU run.** Four independent lenses (alignment
+  math, GPU-inference correctness, pipeline wiring, test adequacy), each finding independently
+  cross-examined by a second agent trying to refute it:
+  1. **CRITICAL** — encoder truncation silently corrupted every production feature: wavlm-large's
+     StableLayerNorm encoder applies one unconditional final LayerNorm to whatever hidden_states
+     entry ends up last, and truncating to exactly `WAVLM_LAYER_INDEX` layers made that the exact
+     entry read (`out.hidden_states[WAVLM_LAYER_INDEX]`) — an extra norm on 100% of forward passes,
+     not fp16 noise. **Fix:** keep `WAVLM_LAYER_INDEX + 1` layers instead (`_load_wavlm`); the norm
+     now lands one entry past the one read. Proven bitwise-exact on a tiny synthetic StableLayerNorm
+     model (`tests/verify_wavlm_truncation.py`, no GPU/download needed).
+  2. **CRITICAL** — a single non-finite (inf/NaN) value — a realistic fp16-autocast overflow —
+     poisoned every subsequent window forever via `cs[hi]-cs[lo]` cumsum cancellation, silently
+     indistinguishable from legitimate silence-masking. **Fix:** `pool_latents_to_intervals` /
+     `interval_rms` now exclude non-finite rows/samples from the running sum and null only the
+     interval(s) that actually trap one.
+  3. **MAJOR** — the pre-existing 20-column window-level acoustic block was never gated by
+     `is_audio_active` (only by the isolated WAV's own RMS floor, which the diarizer's
+     attenuation-not-zeroing leaves blind to who is speaking) — a loud interviewer segment could
+     leak into the target's acoustic features. **Fix:** gated in both `dynamic_window_engine.py`
+     and `temporal_window_generator.py` on confidence-weighted `is_audio_active` ≥ 0.5 (also skips
+     the WavLM cache lookup entirely when not speaking).
+  4. **MAJOR** — chunk/overlap seam stitching silently assumed `chunk_seconds`/
+     `chunk_overlap_seconds` divide evenly into the 20 ms WavLM hop; a non-conforming retune would
+     desync every seam with no error. **Fix:** `validate_chunk_alignment()` (standalone, unit-tested)
+     fails fast in `__init__` instead.
+  5–8 (**minor**): `frame_acoustic_energy_rms` not nulled when a frame trapped zero latents (only
+     the RMS-floor path was masked); zero-norm-row cosine divergence from the original
+     `F.normalize`-eps semantics (both cosine helpers now eps-clamp to match); empty-latents
+     `pool_latents_to_intervals` returned width-1 instead of the documented `[K, H]`.
+  All 8 fixed with dedicated regression coverage: `verify_frame_acoustics.py` grew from 20 to 30
+  checks, plus two new files (`verify_wavlm_truncation.py`, `verify_acoustic_gating.py`). Full
+  suite: **10/10 files, all green.**

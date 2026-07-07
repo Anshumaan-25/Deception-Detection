@@ -125,7 +125,10 @@ def main() -> int:
     print("✅    stem normalization strips _canonical/_hubert suffixes")
 
     with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
+        # resolve(): on macOS the tempdir lives under /var, a symlink to
+        # /private/var; _infer_root resolves paths, so the fixture root must
+        # be resolved too or the equality checks below fail on Darwin.
+        root = Path(tmp).resolve()
         json_path, summary = _write_fixture(root)
 
         # --- 2. Parse ----------------------------------------------------
