@@ -6,7 +6,9 @@
 > If this document and the code disagree, **the code wins** — and the discrepancy is a bug in this
 > document that must be fixed.
 >
-> **Last synced with code:** 2026-07-07 (commit `8baea6e`).
+> **Last synced with code:** 2026-07-07 — committed baseline `8baea6e` **plus uncommitted
+> working-tree changes** from the first real GPU cascade run (OpenFace PyTorch-native path,
+> canonicalizer/YOLO/FaceLock/stream fixes, env changes — see the latest Changelog entry).
 
 ---
 
@@ -291,8 +293,31 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
 1. `offset_ms` audio↔video alignment defaults to 0; never empirically measured.
 2. `WAVLM_LAYER_INDEX = 14` is a proportional-depth placeholder (HuBERT-base layer 7/12 scaled to
    24 layers), not re-tuned on real audio.
-3. No real end-to-end `process_recording_session` run through the GPU stack. Everything is
-   verified against synthetic CSVs (§13); the orchestration wiring itself is compile-checked only.
+3. ~~No real end-to-end run through the GPU stack.~~ **Per-clip path resolved 2026-07-07**: the
+   per-clip cascade (`process_video_session`) runs **end-to-end on real footage on the GPU**
+   (CA-Beard clip, all four phases, valid output CSVs — see changelog). **Recording-level path is
+   still BLOCKED by an open bug** (see "Open bugs" below): `process_recording_session` completes
+   clip 0 (BASELINE) but hangs on clip 1. Until that's fixed, `offset_ms` and `WAVLM_LAYER_INDEX`
+   remain unmeasured on real footage.
+
+**Open bugs (found by the first real GPU runs 2026-07-07, NOT yet fixed — start here next session):**
+
+- **Multi-clip recording hangs on the 2nd clip.** `process_recording_session` runs clip 0
+  (BASELINE, 2888 frames) to completion, then **hangs at the start of clip 1's ingestion** (0 %
+  GPU, one core busy then idle, frozen indefinitely). faulthandler stack of the hang: the **main
+  thread is blocked in `ParallelMediaPipePool.submit_task → task_queue.put()`** (the task pipe is
+  full) while the **result-drainer thread is blocked in `result_queue.get()`** (empty). Diagnosis:
+  the 12 MediaPipe worker processes **stop consuming `task_queue` after clip 0 finishes**, so on
+  clip 1 the task pipe fills and the producer blocks forever. Root cause is worker lifecycle/state
+  across the clip boundary in the *reused* orchestrator + pool (the pool persists across all clips;
+  workers are `daemon` procs). **The per-clip path is unaffected** — clip 0 always succeeds, and a
+  single `process_video_session` on any clip succeeds. **Reproduces deterministically** by running
+  two ≥30 s clips through one orchestrator (clip 0 OK, clip 1 hangs ~90 s in). Distinct from — and
+  downstream of — the pipe-buffer *deadlock* fixed the same day: that was the *result* queue
+  overflowing; this is the *task* queue starving because the workers go quiet. Candidate fixes next
+  session: recreate/reset the MediaPipe pool per clip (mirroring how FaceLock is already recreated
+  per session at `main_pipeline.py:326`); and/or add a worker-liveness check + a `submit_task`
+  timeout so a dead pool fails loudly instead of hanging.
 4. The 2026-07-07 single-pass WavLM rewrite (chunked full-clip forward, fp16 autocast, encoder
    truncation, whole-clip normalization, ~30 s transformer context instead of per-2 s-window
    forwards) is alignment-math-verified (§13) but has never executed on a GPU. Each optimization
@@ -452,3 +477,62 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   All 8 fixed with dedicated regression coverage: `verify_frame_acoustics.py` grew from 20 to 30
   checks, plus two new files (`verify_wavlm_truncation.py`, `verify_acoustic_gating.py`). Full
   suite: **10/10 files, all green.** Committed in `8baea6e`.
+- **2026-07-07** — **FIRST successful end-to-end GPU run of the Stage-2 deception cascade on real
+  footage** (`process_video_session`, CA-Beard clip, all four phases → valid `raw_features_30fps`
+  / `windowed` / `calibrated` CSVs; gaze unit-vectors, frame-level WavLM NaN-masked exactly where
+  `is_audio_active`=0, `deviation_magnitude` populated). Getting there required unblocking OpenFace
+  and clearing a chain of integration/env debt — none of it hypothetical, all found by actually
+  running the stack (working tree; not yet committed):
+  - **OpenFace → PyTorch-native (Strategy B, user-chosen over compiling TensorRT).** The
+    reconstructed `openface_pipeline` was TensorRT-*only* and not wired to loadable weights. Fixes,
+    all validated on a real frame (face conf 0.999, unit gaze, finite AUs; MLT checkpoint an exact
+    394/394 match, loaded strict): `unified_detector.py` — lazy `import tensorrt` + a real PyTorch
+    MLT inference path (mirrors `OpenFace-3.0/demo2.py`; AUs raw, no sigmoid); `extractor.py` —
+    resolve the MLT weight by glob (`stage2_epoch_*.pth`) and fix two float32→float64 upcasts
+    (`img - (104,117,123)` and the ImageNet normalize) that produced `DoubleTensor`s;
+    `main_pipeline.py` — point `legacy_weights_dir` at `OpenFace-3.0/weights`; `face_detector.py` —
+    disable RetinaFace's redundant ImageNet-backbone pretrain (a relative `./weights/…tar` that only
+    resolved with CWD=OpenFace-3.0); `landmark_detector.py` — STAR `device_id` `None`→`0`.
+    The reconstructed detectors are now **runtime-validated**, not just compile-checked (§12).
+  - **Canonicalizer** (`ffmpeg_ingestion/core/*`): `-fps_mode cfr` → `-vsync cfr` (this box ships
+    ffmpeg 4.4; `-fps_mode` needs ≥5.0).
+  - **YOLO** (`Yolo_v8/.../detector.py`): passed a *list of torch Tensors* to
+    `ultralytics.track()`, which ≥8.1 rejects — pass the numpy frame list instead.
+  - **InsightFace/FaceLock on GPU**: env had onnxruntime-gpu **1.15.1** (needs cuDNN 8) but cuDNN
+    **9.1** → CUDA EP wouldn't load, everything ran on CPU (~15× realtime). Upgraded to
+    **onnxruntime-gpu 1.19.2** (CUDA 12 + cuDNN 9; CUDA EP binds once torch is imported first, which
+    loads the CUDA-12 libs `RTLD_GLOBAL`). Also removed the `TensorRTExecutionProvider` from
+    `face_lock.py`'s provider list — InsightFace's loader falls back to **CPU-only** the instant any
+    requested provider errors, so listing an unavailable TRT EP silently forced CPU.
+  - **CUDA stream serialization** (`main_pipeline.py`, `detector.py`, `extractor.py`): running YOLO
+    (torch, in a `ThreadPoolExecutor`) concurrently with InsightFace (onnxruntime CUDA EP, main
+    thread) tripped "operation not permitted when stream is capturing" (ultralytics' profiler calls
+    `torch.cuda.synchronize()`). Removed the three custom `torch.cuda.Stream` contexts and made the
+    per-chunk YOLO→FaceLock→MLT path **serial** (also keeps ByteTrack IDs strictly in frame order).
+  - **MediaPipe pool deadlock** (`mediapipe_pose/parallel_pool.py`): the 12-worker pool wrote
+    results to a `multiprocessing.SimpleQueue` that was only drained *after* the whole ingestion
+    loop. Its backing OS pipe (~64 KB) blocks the producer once full, so after a few hundred frames
+    the workers block on `result_queue.put()`, stop consuming tasks, and the main thread then blocks
+    on `task_queue.put()` — a hard deadlock (0 % CPU/GPU, memory held). Invisible on the 90-frame
+    smoke clip (fits the pipe), fatal on a real 2888-frame clip. **Fix:** a daemon drainer thread
+    empties `result_queue` continuously into a lock-guarded dict; `collect_results()` waits for the
+    count. Verified on the 600-frame clip that previously hung → completes in 55.7 s (~10 fps,
+    ~3× realtime).
+  - **Env, `spovnob_env`**: installed `timm`, `ultralytics`, `lapx` (ByteTrack), `py-spy`; cached
+    `microsoft/wavlm-large` (was absent — only `wavlm-base-plus`); **numpy re-pinned 1.26.4** after
+    ultralytics silently pulled numpy 2.2.6 (broke onnxruntime's C-ABI) and opencv 5.0 (runs on
+    1.26 despite a cosmetic `numpy>=2` metadata nag). Throughput on the RTX 6000 Ada ≈ **5× realtime**
+    on a target-only clip (InsightFace runs all 5 buffalo_l models per frame; batching is a future
+    perf item, not a correctness one). Also corrected stale §12 notes: `session/batch01`,
+    `/home/user1/model_store`, and the SPOVNOB stack are all **present** on this box.
+- **2026-07-07** — **Recording-level (`process_recording_session`) run attempted on real footage
+  (`session/rec_ca`, the 4 CA-Beard clips), all 4 canonicalized + paired via `collect_recording_clips`
+  ✓.** Outcome: **clip 0 (BASELINE) processed to completion** (per-clip cascade with `calibrate=False`,
+  4 diarized target segments applied, Phase 4 correctly deferred, 97 windows) — but the run then
+  **hangs on clip 1** (new open bug, §12: MediaPipe workers stop consuming `task_queue` after the
+  first clip; main blocks on `submit_task`). So the recording-level fit/apply/assemble is **not yet
+  validated on real footage**, and `<rid>_recording_calibrated.csv` was not produced. During the
+  MediaPipe *deadlock* investigation the pool's result-drainer was added and verified on a single
+  600-frame clip (55.7 s); the *multi-clip* task-queue hang is separate and remains open. **State at
+  end of session:** all fixes are working-tree only (uncommitted); temporary run scripts used for
+  bring-up (`_smoke_run.py` etc.) were removed. **Resume next session at the §12 "Open bugs" entry.**

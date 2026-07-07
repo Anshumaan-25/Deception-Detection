@@ -1,4 +1,5 @@
 import cv2
+import glob
 import torch
 import numpy as np
 import logging
@@ -32,9 +33,14 @@ class OpenFaceExtractor:
             weights_path=f"{legacy_weights_dir}/WFLW_STARLoss_NME_4_02_FR_2_32_AUC_0_605.pkl", 
             device=device
         )
+        # MLT (emotion/gaze/AU) checkpoint. The OpenFace-3.0 weights tree ships
+        # it as stage2_epoch_*.pth (see demo2.py), so resolve by glob rather
+        # than hard-coding the epoch/score baked into the filename. Falls back
+        # to the legacy MLT_model.pth name if a differently-named file is used.
+        _mlt_candidates = sorted(glob.glob(f"{legacy_weights_dir}/stage2_epoch_*.pth"))
+        _mlt_weights = _mlt_candidates[-1] if _mlt_candidates else f"{legacy_weights_dir}/MLT_model.pth"
         self.behavior_detector = UnifiedBehaviorDetector(
-            # Assuming the MLT weights file. Adjust if the filename differs in the legacy repo.
-            weights_path=f"{legacy_weights_dir}/MLT_model.pth", 
+            weights_path=_mlt_weights,
             device=device
         )
         self.logger.info("All CUDA engines loaded and synchronized.")
@@ -56,7 +62,7 @@ class OpenFaceExtractor:
         im_height, im_width = img_raw.shape[:2]
         
         # RetinaFace specific mean subtraction
-        img = img_raw - (104, 117, 123)
+        img = img_raw - np.array((104, 117, 123), np.float32)  # float32-safe: bare int tuple upcasts to float64
         img = img.transpose(2, 0, 1)
         img_tensor = torch.from_numpy(img).unsqueeze(0).pin_memory().to(self.device, non_blocking=True)
 
@@ -99,7 +105,7 @@ class OpenFaceExtractor:
             
             # ImageNet Normalization for EfficientNet Backbone
             face_tensor = face_resized.astype(np.float32) / 255.0
-            face_tensor = (face_tensor - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]
+            face_tensor = (face_tensor - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)  # float32-safe
             face_tensor = face_tensor.transpose(2, 0, 1)
             
             face_tensor_th = torch.from_numpy(face_tensor).pin_memory()
@@ -111,9 +117,10 @@ class OpenFaceExtractor:
             return {"frame_id": frame_id, "timestamp_ms": timestamp_ms, "faces": []}
 
         # --- 4. Unified Behavior Forward Pass (Batched) ---
-        with torch.cuda.stream(self.mlt_stream):
-            batch_tensor = torch.stack(batched_crops).to(self.device, non_blocking=True)
-            behavior_results = self.behavior_detector.analyze(batch_tensor)
+        # Default CUDA stream (see detector.py): a custom torch.cuda.Stream
+        # clashes with the onnxruntime CUDA EP (InsightFace) running in-process.
+        batch_tensor = torch.stack(batched_crops).to(self.device, non_blocking=True)
+        behavior_results = self.behavior_detector.analyze(batch_tensor)
 
         # --- 5. Construct JSON-Ready Output ---
         for idx, behavior in enumerate(behavior_results):
@@ -182,7 +189,7 @@ class OpenFaceExtractor:
             # RetinaFace Preprocessing
             img_raw = np.float32(crop)
             im_height, im_width = img_raw.shape[:2]
-            img = img_raw - (104, 117, 123)
+            img = img_raw - np.array((104, 117, 123), np.float32)  # float32-safe: bare int tuple upcasts to float64
             img = img.transpose(2, 0, 1)
             img_tensor = torch.from_numpy(img).unsqueeze(0).pin_memory().to(self.device, non_blocking=True)
 
@@ -215,7 +222,7 @@ class OpenFaceExtractor:
             face_resized = cv2.resize(face_rgb, (224, 224))
 
             face_tensor = face_resized.astype(np.float32) / 255.0
-            face_tensor = (face_tensor - [0.485, 0.456, 0.406]) / [0.229, 0.224, 0.225]
+            face_tensor = (face_tensor - np.array([0.485, 0.456, 0.406], np.float32)) / np.array([0.229, 0.224, 0.225], np.float32)  # float32-safe
             face_tensor = face_tensor.transpose(2, 0, 1)
 
             # Stage for batched forward pass
@@ -227,10 +234,11 @@ class OpenFaceExtractor:
 
         # Step 2: Unified Batched MLT Forward Pass (If any valid faces were detected)
         if batched_crops:
-            with torch.cuda.stream(self.mlt_stream):
-                batch_tensor = torch.stack(batched_crops).to(self.device, non_blocking=True)
-                # Run the single heavy batched forward pass on GPU
-                behavior_results = self.behavior_detector.analyze(batch_tensor)
+            # Default CUDA stream (see detector.py): a custom torch.cuda.Stream
+            # clashes with the onnxruntime CUDA EP (InsightFace) in-process.
+            batch_tensor = torch.stack(batched_crops).to(self.device, non_blocking=True)
+            # Run the single heavy batched forward pass on GPU
+            behavior_results = self.behavior_detector.analyze(batch_tensor)
 
             # Step 3: Unpack results and assign them back to their correct chronological indexes
             for i, idx in enumerate(valid_indices):

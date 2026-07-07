@@ -33,19 +33,21 @@ class FaceLock:
 
         os.makedirs(engine_cache_dir, exist_ok=True)
 
-        # Configure onnxruntime to route through TensorRT with FP16
+        # CUDA first, CPU as genuine fallback. The TensorRT EP is deliberately
+        # NOT listed: this box has no TensorRT runtime (Strategy B / PyTorch-
+        # native), and InsightFace's session loader falls back to CPU-ONLY the
+        # instant ANY requested provider errors (it retries with just
+        # ['CPUExecutionProvider'], dropping CUDA too). So listing an
+        # unavailable TensorRT EP silently forced every InsightFace model onto
+        # CPU — ~15x slower than realtime. Re-add the TensorRT EP here only once
+        # a TensorRT runtime is actually installed and verified on the box.
         providers = [
-            ("TensorRTExecutionProvider", {
-                "trt_fp16_enable": True,
-                "trt_engine_cache_enable": True,
-                "trt_engine_cache_path": engine_cache_dir,
-            }),
             ("CUDAExecutionProvider", {}),
+            ("CPUExecutionProvider", {}),
         ]
 
         self.logger.info(
-            f"🚀 Initializing InsightFace with TensorRT EP "
-            f"(FP16, cache: {engine_cache_dir})")
+            f"🚀 Initializing InsightFace (CUDA EP, cache: {engine_cache_dir})")
 
         self.app = FaceAnalysis(
             name="buffalo_l", root=ROOT, providers=providers)

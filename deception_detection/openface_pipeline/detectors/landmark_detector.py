@@ -98,9 +98,12 @@ class LandmarkDetector:
         # Network construction exactly as STAR/demo.py::Alignment.__init__
         # (and OpenFace-3.0/demo.py lines 239-245): the 'alignment' config
         # from STAR/conf resolves the stackedHGnet_v1 WFLW architecture.
+        # torch.device("cuda") (no explicit index) has .index == None, which
+        # STAR's utility.set_environment rejects (`config.device_id >= 0`).
+        # Coalesce to GPU 0. `self.device.index or 0` maps both None and 0 → 0.
         args = argparse.Namespace(
             config_name="alignment",
-            device_id=self.device.index if self.device.type == "cuda" else -1,
+            device_id=(self.device.index or 0) if self.device.type == "cuda" else -1,
         )
         self.config = utility.get_config(args)
         self.config.device_id = args.device_id

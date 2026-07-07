@@ -48,25 +48,23 @@ class PersonDetector:
         if not frames_list:
             return []
 
-        # Enforce pinned host memory allocation and non-blocking PCIe migration
-        import numpy as np
-        # Convert list of BGR numpy frames to a single stacked tensor (B, H, W, C)
-        batch_numpy = np.stack(frames_list)
-        # Allocate pinned memory buffer directly
-        batch_tensor = torch.from_numpy(batch_numpy).pin_memory()
-        # Non-blocking copy to VRAM across PCIe
-        batch_tensor_gpu = batch_tensor.to(self.device, non_blocking=True)
-        # Convert to list of tensors for Ultralytics YOLO track API compatibility
-        batch_tensors_list = [batch_tensor_gpu[i] for i in range(batch_tensor_gpu.shape[0])]
-
-        with torch.cuda.stream(self.yolo_stream):
-            results = self.model.track(
-                batch_tensors_list,
-                persist=True,
-                classes=[0],   # person only
-                conf=0.4,
-                verbose=False
-            )
+        # Hand the list of BGR numpy frames straight to Ultralytics. An earlier
+        # version stacked these into a pinned GPU tensor and passed a LIST OF
+        # torch tensors, but ultralytics>=8.1 rejects Tensor list-elements as a
+        # prediction source ("type Tensor is not a supported source type"). A
+        # list of HWC numpy arrays is a supported batch source, and ultralytics
+        # performs the pinned host->device copy internally.
+        # Default CUDA stream. A custom torch.cuda.Stream here collided with
+        # onnxruntime's CUDA EP (InsightFace, now GPU) — "operation not
+        # permitted when stream is capturing". The stream was only a throughput
+        # micro-opt; correctness-first runs use the default stream.
+        results = self.model.track(
+            frames_list,
+            persist=True,
+            classes=[0],   # person only
+            conf=0.4,
+            verbose=False
+        )
 
         batch_detections = []
         for r in results:

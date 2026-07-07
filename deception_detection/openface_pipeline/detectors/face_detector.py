@@ -79,7 +79,13 @@ class FaceDetector:
         logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
         self.logger = logging.getLogger("RetinaFace_Detector")
         self.device = torch.device(device)
-        self.cfg = cfg_mnet
+        # cfg_mnet['pretrain']=True makes RetinaTace.__init__ load an ImageNet
+        # backbone from the relative path "./weights/mobilenetV1X0.25_pretrain.tar",
+        # which only resolves with CWD=OpenFace-3.0 (the pipeline runs from
+        # deception_detection/). It is redundant regardless: _load_weights below
+        # loads the trained mobilenet0.25_Final.pth over the whole network,
+        # backbone included. Disable it so construction is CWD-independent.
+        self.cfg = {**cfg_mnet, "pretrain": False}
         self.confidence_threshold = confidence_threshold
         self.nms_threshold = nms_threshold
 

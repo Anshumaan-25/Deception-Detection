@@ -56,7 +56,14 @@ class MultimodalProductionOrchestrator:
         )
         
         self.parallel_pool = ParallelMediaPipePool(num_workers=12)
-        self.openface_pipeline = OpenFaceExtractor(legacy_weights_dir="openface_pipeline/weights")
+        # OpenFace weights live in the OpenFace-3.0 tree (mobilenet0.25_Final.pth,
+        # WFLW_STARLoss…pkl, stage2_epoch_*.pth). Resolve module-relative so it
+        # works regardless of CWD. (openface_pipeline/weights is gitignored/empty
+        # on this box; the reconstructed package reads the academic tree directly.)
+        _openface_weights = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "OpenFace-3.0", "weights"
+        )
+        self.openface_pipeline = OpenFaceExtractor(legacy_weights_dir=_openface_weights)
         self.audio_pipeline = MediaPipeAudioDiarizer(attenuation_factor=attenuation)
         
         self.detector = PersonDetector(model_path=active_yolo_path, device='cuda')
@@ -363,32 +370,22 @@ class MultimodalProductionOrchestrator:
                     if len(batch_buffer) == batch_size:
                         current_chunk = batch_buffer
                         batch_buffer = []
+                        # Serial: YOLO (torch) then FaceLock+MLT (InsightFace via
+                        # the onnxruntime CUDA EP) on the SAME chunk. This was a
+                        # thread-based double buffer (YOLO on chunk N+1 overlapping
+                        # the tail of chunk N), but issuing torch and onnxruntime
+                        # CUDA work concurrently from different threads trips
+                        # "operation not permitted when stream is capturing"
+                        # (ultralytics' profiler calls torch.cuda.synchronize()
+                        # while ORT holds the CUDA context). Serial is correctness-
+                        # safe and keeps ByteTrack IDs strictly in frame order.
+                        batch_detections = self._run_yolo(current_chunk)
+                        self._process_chunk_tail(current_chunk, batch_detections, openface_records)
 
-                        # Submit Chunk N+1 to YOLO tracking Thread
-                        next_future_yolo = executor.submit(self._run_yolo, current_chunk)
-
-                        if prev_chunk is not None:
-                            # Wait for YOLO on Chunk N
-                            batch_detections = future_yolo.result()
-                            # Process FaceLock & MLT on Chunk N (Double-Buffered)
-                            self._process_chunk_tail(prev_chunk, batch_detections, openface_records)
-                        
-                        prev_chunk = current_chunk
-                        future_yolo = next_future_yolo
-
-                # Handle trailing frames gracefully
+                # Flush trailing frames (final partial chunk)
                 if batch_buffer:
-                    next_future_yolo = executor.submit(self._run_yolo, batch_buffer)
-                    if prev_chunk is not None:
-                        batch_detections = future_yolo.result()
-                        self._process_chunk_tail(prev_chunk, batch_detections, openface_records)
-                    prev_chunk = batch_buffer
-                    future_yolo = next_future_yolo
-
-                # Flush the last remaining chunk
-                if prev_chunk is not None:
-                    batch_detections = future_yolo.result()
-                    self._process_chunk_tail(prev_chunk, batch_detections, openface_records)
+                    batch_detections = self._run_yolo(batch_buffer)
+                    self._process_chunk_tail(batch_buffer, batch_detections, openface_records)
 
             print("\n--- INGESTION COMPLETE. COLLECTING PARALLEL RESULTS ---")
 

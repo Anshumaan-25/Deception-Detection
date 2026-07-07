@@ -17,10 +17,19 @@ LEGACY_OPENFACE_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", "..", "Op
 if LEGACY_OPENFACE_ROOT not in sys.path:
     sys.path.insert(0, LEGACY_OPENFACE_ROOT)
 
-# TensorRT imports — mandatory on production server
-import tensorrt as trt
+# TensorRT is OPTIONAL. It is only needed to route MLT inference through a
+# precompiled .engine (the production fast-path). The PyTorch-native path
+# (Strategy B, 2026-07-07) runs entirely without it, so import lazily and
+# never fail at import time just because tensorrt is absent.
+try:
+    import tensorrt as trt
+    _HAS_TENSORRT = True
+except Exception:  # ModuleNotFoundError, or a broken TRT/CUDA install
+    trt = None
+    _HAS_TENSORRT = False
 
-# Safely import the MLT architecture from the legacy folder (fallback reference only)
+# The MLT architecture from the legacy folder — used directly by the
+# PyTorch-native path, and as a reference for the TensorRT export.
 from model.MLT import MLT
 
 
@@ -152,7 +161,7 @@ class UnifiedBehaviorDetector:
         )
         engine_path = os.path.join(project_root, "weights", "trt_engines", "MLT.engine")
 
-        if os.path.exists(engine_path):
+        if os.path.exists(engine_path) and _HAS_TENSORRT:
             self.logger.info(
                 f"🚀 TensorRT engine detected. Routing MLT inference through "
                 f"hardware-fused CUDA kernels (PyTorch bypassed entirely)."
@@ -161,11 +170,47 @@ class UnifiedBehaviorDetector:
             self.model = None  # PyTorch model is NOT loaded — zero memory overhead
             self._use_tensorrt = True
         else:
+            # PyTorch-native path (Strategy B): no compiled engine present, or
+            # tensorrt is not importable on this box. Load MLT in torch,
+            # mirroring OpenFace-3.0/demo2.py. Slower per-frame than the fused
+            # engine, but numerically faithful to the academic reference and
+            # dependency-light — the right choice for first-run validation.
+            if os.path.exists(engine_path) and not _HAS_TENSORRT:
+                self.logger.warning(
+                    f"MLT.engine present at '{engine_path}' but tensorrt is not "
+                    f"importable; falling back to the PyTorch MLT path."
+                )
+            self.trt_engine = None
+            self.model = self._load_pytorch_mlt(weights_path)
+            self._use_tensorrt = False
+
+    def _load_pytorch_mlt(self, weights_path: str):
+        """
+        Load the MLT network in PyTorch for the native inference path.
+
+        The OpenFace-3.0 weights tree ships the checkpoint as
+        ``stage2_epoch_*.pth`` (see demo2.py). It is an exact match for the
+        MLT architecture (394/394 tensors, verified), so we load strict — a
+        future architecture drift then fails loudly instead of silently
+        producing garbage AUs/gaze.
+        """
+        if not weights_path or not os.path.exists(weights_path):
             raise RuntimeError(
-                f"FATAL: Compiled TensorRT engine not found at '{engine_path}'. "
-                f"Production pipeline requires pre-compiled engines. "
-                f"Run: python tools/compile_pipeline_trt.py --project-root {project_root}"
+                f"FATAL: MLT checkpoint not found at '{weights_path}'. The "
+                f"PyTorch-native OpenFace path needs OpenFace-3.0/weights/"
+                f"stage2_epoch_*.pth."
             )
+        model = MLT()
+        ckpt = torch.load(weights_path, map_location="cpu")
+        state = ckpt.get("state_dict", ckpt) if isinstance(ckpt, dict) else ckpt
+        # Strip a DataParallel 'module.' prefix if the checkpoint carries one.
+        state = {(k[7:] if k.startswith("module.") else k): v for k, v in state.items()}
+        model.load_state_dict(state, strict=True)
+        model.eval()
+        self.logger.info(
+            f"✅ PyTorch MLT loaded from {weights_path} ({len(state)} tensors)."
+        )
+        return model.to(self.device)
 
     @torch.no_grad()
     def analyze(self, batched_crops: torch.Tensor) -> list:
@@ -193,11 +238,18 @@ class UnifiedBehaviorDetector:
             emotion_exp = np.exp(emotion_probs_raw - emotion_max)
             emotion_probs = emotion_exp / emotion_exp.sum(axis=1, keepdims=True)
         else:
-            # This branch should never execute in production
-            raise RuntimeError(
-                "FATAL: PyTorch fallback path reached in production. "
-                "This indicates a configuration error."
-            )
+            # PyTorch-native path (Strategy B). Produce the SAME three numpy
+            # arrays the TensorRT branch does, so every downstream step
+            # (softmax, gaze spherical→cartesian, result packing) is shared and
+            # backend-agnostic. AUs are the raw Head cosine outputs — no
+            # sigmoid — exactly as OpenFace-3.0/demo2.py consumes them.
+            emotion_t, gaze_t, au_t = self.model(batched_crops)
+            emotion_probs_raw = emotion_t.detach().float().cpu().numpy()
+            gaze_numpy = gaze_t.detach().float().cpu().numpy()
+            au_numpy = au_t.detach().float().cpu().numpy()
+            emotion_max = emotion_probs_raw.max(axis=1, keepdims=True)
+            emotion_exp = np.exp(emotion_probs_raw - emotion_max)
+            emotion_probs = emotion_exp / emotion_exp.sum(axis=1, keepdims=True)
 
         # ── Post-process Gaze (Spherical → 3D Cartesian) ────────────
         yaw = gaze_numpy[:, 0]
