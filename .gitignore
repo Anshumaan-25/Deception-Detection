@@ -47,6 +47,10 @@ expected_hashes.json
 deception_detection/SPOVNOB_intake/
 deception_detection/pipeline_system_outputs/
 deception_detection/weights/trt_engines/
+# openface_pipeline/*.py IS mono-repo source (reconstructed 2026-07-07); its
+# weights/ is model-store material — the STAR .pkl there is not caught by the
+# global weight globs above (they lack *.pkl)
+deception_detection/openface_pipeline/weights/
 
 # --- Deception detection external sub-repos (cloned separately, not committed here) ---
 # Each is a standalone GitHub repo with its own history. Clone them into place:
