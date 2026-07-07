@@ -6,7 +6,7 @@
 > If this document and the code disagree, **the code wins** — and the discrepancy is a bug in this
 > document that must be fixed.
 >
-> **Last synced with code:** 2026-07-06 (commit `4433b4c`).
+> **Last synced with code:** 2026-07-07 (commit `8baea6e`).
 
 ---
 
@@ -85,8 +85,10 @@ Deception_Detection/
 │   └── weights/trt_engines/      ← compiled TensorRT engine cache
 ├── session/                      ← SPOVNOB batch outputs (batch01, rec_ca, …)
 ├── my_videos/                    ← real test footage (CA Beard / NT clips / UB Beard-Tougher)
-├── PIPELINE_ARCHITECTURE.md      ← the block diagram (Mermaid) — visual companion to this doc
-├── MASTER_REFERENCE.md           ← this document
+├── Documentation/
+│   ├── MASTER_REFERENCE.md       ← this document
+│   ├── PIPELINE_ARCHITECTURE.md  ← the block diagram (Mermaid) — visual companion to this doc
+│   └── (historical docs, diagram exports — see §15)
 └── README.md                     ← short public-facing overview
 ```
 
@@ -364,11 +366,12 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 
 | Document | Role |
 |---|---|
-| **`MASTER_REFERENCE.md`** (this) | Living master — always current; updated with every change |
-| `PIPELINE_ARCHITECTURE.md` | The block diagram (Mermaid) — visual companion, kept in sync |
+| **`Documentation/MASTER_REFERENCE.md`** (this) | Living master — always current; updated with every change |
+| `Documentation/PIPELINE_ARCHITECTURE.md` | The block diagram (Mermaid) — visual companion, kept in sync |
 | `audio_diarization/SPOVNOB_MASTER_REFERENCE.md` | Deep authority for the audio side |
 | `deception_detection/RECORDING_TIMELINE_AND_ACOUSTIC_UPGRADE_PLAN.md` | **Historical** — completed plan (Phases A+B, done 2026-07-02) |
 | `deception_detection/MERGE_INTEGRATION_PLAN.md` | **Historical** — merge plan; known-stale vs code even before completion |
+| `Documentation/Audio_Diarization.md`, `Documentation/SPOVNOB_Master_Multimodal_Pipeline_premerge.md`, `Documentation/issues_and_changes_diarization_analysis.md` | **Historical** — pre-merge reference docs restored 2026-07-07 from the SPOVNOB source tree |
 | `README.md` | Short public-facing overview |
 
 Update protocol: when code changes, update the affected section(s) **and** add a dated Changelog
@@ -397,12 +400,13 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   `detectors/face_detector.py` + `detectors/landmark_detector.py` (desktop originals lost — see
   §12), new `__init__.py` sys.path bootstrap, RetinaFace + STAR weights copied to
   `openface_pipeline/weights/`. `.gitignore`: added `deception_detection/openface_pipeline/weights/`.
+  Committed in `1734661`.
 - **2026-07-07** — Test suite fully green (7/7, incl. pandas 3.0.2 compatibility): fixed
   `verify_confidence_fusion.py` NameError (half-applied rename) and `verify_diarization_bridge.py`
-  macOS `/var`→`/private/var` tempdir-resolution assert.
+  macOS `/var`→`/private/var` tempdir-resolution assert. Committed in `5d86218`.
 - **2026-07-07** — `MASTER_REFERENCE.md` + `PIPELINE_ARCHITECTURE.md` moved into `Documentation/`
-  alongside the Br-Clip-Flow diagram exports (user reorganization; §3 map and §15 table paths to
-  be updated when the move is committed).
+  alongside the Br-Clip-Flow diagram exports (user reorganization); §3 map and §15 table updated
+  to match. Committed in `5d86218`.
 - **2026-07-07** — **Frame-level WavLM alignment (ST-GAE prerequisite) + single-pass rewrite.**
   New `audio_isolation/core/frame_alignment.py` (pure-numpy, unit-testable): absolute-timestamp
   bucketing of WavLM latents onto the 30 fps master clock (drift-free vs index-ratio math — a
@@ -414,7 +418,7 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   `frame_*` block masked by `is_audio_active`. Hardware profile tuned for the production desktop
   (RTX 6000 Ada 48 GB, 44 cores, 512 GB RAM, Ubuntu, R580/CUDA 12.x). New
   `tests/verify_frame_acoustics.py` (20 checks); full suite 8/8. GPU execution still pending
-  (§12.4).
+  (§12.4). Committed together with the review fixes below in `8baea6e`.
 - **2026-07-07** — **Adversarial multi-agent review of the single-pass WavLM rewrite — 8 bugs
   found, verified, and fixed same-day, before any GPU run.** Four independent lenses (alignment
   math, GPU-inference correctness, pipeline wiring, test adequacy), each finding independently
@@ -447,4 +451,4 @@ line. Completed plan docs are frozen as history, never edited retroactively.
      `pool_latents_to_intervals` returned width-1 instead of the documented `[K, H]`.
   All 8 fixed with dedicated regression coverage: `verify_frame_acoustics.py` grew from 20 to 30
   checks, plus two new files (`verify_wavlm_truncation.py`, `verify_acoustic_gating.py`). Full
-  suite: **10/10 files, all green.**
+  suite: **10/10 files, all green.** Committed in `8baea6e`.
