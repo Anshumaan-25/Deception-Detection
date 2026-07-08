@@ -593,3 +593,9 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   (gitignored: outputs + canonical media); committable scripts in `validation/gt_subjectA/`.
   `.gitignore` += `my_videos/` (4 GB source footage must never stage). Remaining next session:
   full SPOVNOB production-path run on this recording; ST-GAE design.
+- **2026-07-08** — **Overlap-robustness check passed + visual proof-of-signal.** Within-06
+  AUCs rerun on strictly non-overlapping windows (95 Lie / 26 Truth): signal holds or sharpens
+  (AU12 tremor 0.681→0.692, hand↔face 0.679→0.687, gaze-x inverse 0.162→0.138; motion-energy
+  null control stays at chance). New in `validation/gt_subjectA/`: `gt_robustness.py` (the
+  check) and `clip06_timeline.html` (six channel traces vs the annotated Truth/Lie bands —
+  first mock of the per-clip ST-GAE attribution report). RESULTS.md updated with both.

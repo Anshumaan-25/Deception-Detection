@@ -56,11 +56,27 @@ Behavioral story for this subject during lies: **more facial micro-dynamics (AU1
 velocity+tremor), more hand-near-face, more wrist motion, suppressed gaze variability, and
 reduced gross body-motion energy.**
 
+## Robustness: overlap check (gt_robustness.py)
+Rerun of within-06 AUCs on **strictly non-overlapping windows** (every 2nd window; 95 Lie /
+26 Truth). The signal holds or sharpens — it is not an artifact of window overlap:
+
+| channel | all windows | non-overlapping |
+|---|---|---|
+| AU12 velocity tremor band power | 0.681 | **0.692** |
+| left hand↔face distance min | 0.679 | **0.687** |
+| AU1 velocity max | 0.635 | 0.655 |
+| head-pitch tremor band power | 0.625 | 0.634 |
+| gaze_x mean (inverse) | 0.162 | **0.138** |
+| motion_energy mean (null control) | 0.498 | 0.482 |
+
+Visual companion: `clip06_timeline.html` — six channel traces on the clip-06 clock with the
+annotated Truth/Lie bands behind them (also the first mock of the per-clip attribution report).
+
 ## Caveats
-N=1 subject; windows overlap (2s/1s hop → adjacent windows share data, effective n is lower);
-134 comparisons (best within-06 AUCs remain ≳3 SE above 0.5 after overlap deflation, but treat
-magnitudes as provisional); annotator = single coder. Effect sizes (0.62–0.68 window-level)
-are consistent with the deception literature's ceiling — encouraging, not conclusive.
+N=1 subject; 134 comparisons (best within-06 AUCs remain ≳3 SE above 0.5 on the
+non-overlapping subset, but treat magnitudes as provisional); annotator = single coder.
+Effect sizes (0.62–0.69 window-level) are consistent with the deception literature's
+ceiling — encouraging, not conclusive.
 
 ## Implications
 1. **Empirical mandate for attribution over any scalar score** — the ST-GAE end-stage design
