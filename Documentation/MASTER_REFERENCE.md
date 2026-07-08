@@ -6,9 +6,10 @@
 > If this document and the code disagree, **the code wins** — and the discrepancy is a bug in this
 > document that must be fixed.
 >
-> **Last synced with code:** 2026-07-07 — committed baseline `8baea6e` **plus uncommitted
-> working-tree changes** from the first real GPU cascade run (OpenFace PyTorch-native path,
-> canonicalizer/YOLO/FaceLock/stream fixes, env changes — see the latest Changelog entry).
+> **Last synced with code:** 2026-07-08 — committed baseline `04f660b` (top repo; nested:
+> `mediapipe_pose` @ `f68f562`, `ffmpeg_ingestion` @ `5f2c65f`). Working trees clean. State:
+> ground-truth proof-of-signal validation complete (`validation/gt_subjectA/RESULTS.md`);
+> blink/EAR seam fixed; next up: SPOVNOB production pass on SubjectA + ST-GAE design.
 
 ---
 
@@ -23,9 +24,10 @@ Core doctrine:
 - **Attribution, not classification.** The system never outputs a truth/lie verdict. It outputs
   *where* and *how strongly* behavior deviates from the subject's own baseline, per feature, per
   time window. Interpretation belongs to a human analyst.
-- **No ground truth in production, ever.** ELAN-annotated videos exist only as a small offline
-  training corpus for possible future supervised work. Nothing in the production path consumes
-  annotations.
+- **No ground truth in production, ever.** ELAN-annotated videos serve two offline roles only:
+  scoring/validation of the unsupervised pipeline (labels overlaid *after* calibration — the
+  2026-07-08 proof-of-signal) and a small corpus for possible future supervised work. Nothing
+  in the production path consumes annotations.
 - **Per-subject calibration.** Every recording ships with a dedicated baseline clip (the subject
   giving generic information). That clip defines "normal" for that subject — both for today's
   z-score calibration and for the future ST-GAE's reconstruction-error training.
@@ -82,11 +84,16 @@ Deception_Detection/
 │   ├── Yolo_v8/                  ← PersonDetector + FaceLock (TensorRT)
 │   ├── dashboard/ + frontend/    ← diagnostic dashboard / browser UI
 │   ├── tests/                    ← verify_*.py self-test suite (§10)
+│   ├── validation/gt_subjectA/   ← ground-truth validation: scorer/attribution/robustness
+│   │                                scripts + RESULTS.md + clip06_timeline.html (2026-07-08)
 │   ├── SPOVNOB_intake/           ← intake watch folder (incl. SESSION_TEST_MOCK fixture)
-│   ├── pipeline_system_outputs/  ← per-session + per-recording outputs (§9)
+│   ├── pipeline_system_outputs/  ← per-session + per-recording outputs (§9; gitignored —
+│   │                                incl. GT_SUBJECTA_20260708 outputs + canonical media)
 │   └── weights/trt_engines/      ← compiled TensorRT engine cache
 ├── session/                      ← SPOVNOB batch outputs (batch01, rec_ca, …)
-├── my_videos/                    ← real test footage (CA Beard / NT clips / UB Beard-Tougher)
+├── my_videos/                    ← real test footage (gitignored): CA Beard / NT / UB clips +
+│                                    00SubjectA_session1/ (first ELAN-annotated recording w/
+│                                    dedicated baseline — see 2026-07-08 changelog)
 ├── Documentation/
 │   ├── MASTER_REFERENCE.md       ← this document
 │   ├── PIPELINE_ARCHITECTURE.md  ← the block diagram (Mermaid) — visual companion to this doc
@@ -178,7 +185,9 @@ in RAM; the window-level and frame-level consumers below are then pure numpy ove
 **Phase 2 — Raw feature compilation** (`compile_raw_features`).
 Vectorized kinematics: 3D hand-to-face distance (L/R), 3D wrist velocity (L/R), gaze velocity,
 AU onset velocity (AU1/2/4/6/9/12/25/26 — genuine expression onsets run ~250–500 ms; posed ones
-don't), 7-landmark `macro_motion_energy`. Exact frame-by-frame inner join of pose × OpenFace on
+don't), 7-landmark `macro_motion_energy`, plus `ear` / `is_blinking` merged per-frame from the
+pool's lip logs (seam fixed 2026-07-08 — they were previously computed but dropped, leaving every
+windowed blink feature NaN). Exact frame-by-frame inner join of pose × OpenFace on
 the shared master-clock timestamp, then **frame-level acoustic injection**: the 18-column
 `frame_*` block (`audio_isolation/core/frame_alignment.py`) pools WavLM latents into each video
 frame's 33.3 ms interval by **absolute-timestamp bucketing** (searchsorted over latent-frame
@@ -288,11 +297,13 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
 
 ## 12. Known issues, dead code & validation debt
 
-**Validation debt (as-built but unproven on real footage — blocked on the "no dry runs" hold):**
+**Validation debt (remaining):**
 
-1. `offset_ms` audio↔video alignment defaults to 0; never empirically measured.
+1. `offset_ms` audio↔video alignment defaults to 0; never empirically measured. Unblocked:
+   `my_videos/00SubjectA_session1/` has a real dedicated baseline — measure during the SPOVNOB
+   production pass.
 2. `WAVLM_LAYER_INDEX = 14` is a proportional-depth placeholder (HuBERT-base layer 7/12 scaled to
-   24 layers), not re-tuned on real audio.
+   24 layers), not re-tuned on real audio. Same unblock as (1).
 3. ~~No real end-to-end run through the GPU stack.~~ **Per-clip path resolved 2026-07-07**: the
    per-clip cascade (`process_video_session`) runs **end-to-end on real footage on the GPU**
    (CA-Beard clip, all four phases, valid output CSVs — see changelog). **The recording-level path
@@ -302,7 +313,9 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
    deviation ≈ 0 (the §8 sanity check), `deviation_percentile` recording-wide. **Remaining:**
    `offset_ms` is still 0/unmeasured and `WAVLM_LAYER_INDEX` unre-tuned — both need a recording that
    has a *real dedicated baseline* clip (rec_ca's clip 0 is just an interview clip treated as
-   baseline; fine for wiring validation, not for a forensic result).
+   baseline; fine for wiring validation, not for a forensic result). **That recording now exists**
+   (`00SubjectA_session1`, received 2026-07-08, already proof-of-signal-validated per-clip); the
+   SPOVNOB production pass on it is the next-session task.
 
 **Bugs found by the first real GPU runs 2026-07-07 (now fixed):**
 
@@ -328,9 +341,10 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
   the boundary); rebuilding sidesteps it.
 4. The 2026-07-07 single-pass WavLM rewrite (chunked full-clip forward, fp16 autocast, encoder
    truncation, whole-clip normalization, ~30 s transformer context instead of per-2 s-window
-   forwards) is alignment-math-verified (§13) but has never executed on a GPU. Each optimization
-   is independently toggleable via `WavLMAcousticExtractor` kwargs / module constants — first
-   real-footage run should A/B `use_amp` and `truncate_encoder` against fp32 full-stack once.
+   forwards) **has now executed on GPU across every 2026-07-07/08 run** (rec_ca ×4 clips +
+   SubjectA ×8 clips, frame block correctly NaN-masked). Still pending: the one-time A/B of
+   `use_amp` / `truncate_encoder` against fp32 full-stack (each independently toggleable via
+   `WavLMAcousticExtractor` kwargs / module constants).
    An adversarial multi-agent review (2026-07-07, same day) found and fixed 8 real bugs in this
    rewrite before it ever reached hardware — see the dedicated changelog entry below. All 8 now
    have regression tests; none were hypothetical.
@@ -380,17 +394,23 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 
 ## 14. Roadmap (future, in intended order — nothing scheduled)
 
-1. **Real-footage validation** (first thing once the dry-run hold lifts): one real recording
-   (baseline + interviews) through SPOVNOB → `process_recording_session` end-to-end; measure
-   `offset_ms`; re-tune `WAVLM_LAYER_INDEX` empirically.
-2. **ST-GAE end-stage** (concept/design only): spatio-temporal graph autoencoder over the raw
-   synchronized 30 fps frame-level features (Phase 2 CSV). Fit per subject on the baseline clip
-   (= "normal"); reconstruction error on interview clips = anomaly. Deliverable: **Temporal
-   Anomaly Attribution Report** — timestamped cognitive-friction segments + node-wise
-   reconstruction-error map. Open design questions: node/edge definition; per-subject fit cost;
-   minimum baseline duration; replace-vs-complement the z-score path; VideoMAE v2's role.
-3. **VideoMAE v2** (deferred): deep spatiotemporal latents as a 4th parallel extractor branch,
-   presumed to feed the ST-GAE graph.
+1. **SPOVNOB production pass on `00SubjectA_session1`** (next session): full Stage-1 diarization
+   → `process_recording_session` end-to-end (also regenerates outputs with blink/EAR alive);
+   measure `offset_ms`; re-tune `WAVLM_LAYER_INDEX` empirically. *(The per-clip proof-of-signal
+   half of "real-footage validation" completed 2026-07-08 — see changelog.)*
+2. **ST-GAE end-stage** (concept/design only — now with an **empirical mandate**: the 2026-07-08
+   validation measured that no scalar aggregate carries signal while per-channel deviations do):
+   spatio-temporal graph autoencoder over the raw synchronized 30 fps frame-level features
+   (Phase 2 CSV). Fit per subject on the baseline clip (= "normal"); reconstruction error on
+   interview clips = anomaly. Deliverable: **Temporal Anomaly Attribution Report** — timestamped
+   cognitive-friction segments + node-wise reconstruction-error map (visual mock:
+   `validation/gt_subjectA/clip06_timeline.html`). Design must be direction-aware per channel
+   (e.g. this subject: AU12/hand/wrist ↑ during lies, gaze variability + body motion ↓).
+   Open questions: node/edge definition; per-subject fit cost; minimum baseline duration;
+   replace-vs-complement the z-score path; VideoMAE v2's role.
+3. **VideoMAE v2** (deferred, decision 2026-07-08: hold until the ST-GAE design settles whether
+   it's needed): deep spatiotemporal latents as a 4th parallel extractor branch, presumed to
+   feed the ST-GAE graph.
 4. **Supervised training path** (distant): the ELAN-annotated corpus +
    `temporal_window_generator.py` exist for this; explicitly out of scope now.
 5. **Production deployment target**: resolve dev-box vs nv05 (SPOVNOB pin incompatibility).
@@ -612,3 +632,11 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   fully populated, an actual blink lands in one window (count 1, EAR dip + var spike).
   NOTE: `GT_SUBJECTA_20260708` outputs predate the fix (blink features NaN there); the next
   full run (SPOVNOB production pass) regenerates them with blink alive.
+- **2026-07-08** — **Full-document sync pass** (sections, not just changelog): header sync line →
+  `04f660b` baseline + clean trees; §1 doctrine now names the validation/scoring role of ELAN
+  labels; §3 map adds `validation/gt_subjectA/` + `00SubjectA_session1` footage; §7 Phase 2
+  documents the blink/EAR merge; §12 validation-debt items 1/2 marked unblocked by the SubjectA
+  baseline recording, item 3 notes the recording exists, item 4 corrected (single-pass WavLM has
+  now run on GPU; only the fp32 A/B remains); §14 roadmap item 1 → SPOVNOB production pass,
+  item 2 carries the empirical attribution mandate + per-channel directions, item 3 records the
+  VideoMAE hold decision.
