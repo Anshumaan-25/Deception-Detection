@@ -66,3 +66,4 @@ deception_detection/opencv_streaming/
 # --- Audio diarization runtime dirs (not source) ----------------------------------------
 audio_diarization/session/
 audio_diarization/wheelhouse/
+my_videos/

@@ -295,14 +295,18 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
    24 layers), not re-tuned on real audio.
 3. ~~No real end-to-end run through the GPU stack.~~ **Per-clip path resolved 2026-07-07**: the
    per-clip cascade (`process_video_session`) runs **end-to-end on real footage on the GPU**
-   (CA-Beard clip, all four phases, valid output CSVs — see changelog). **Recording-level path is
-   still BLOCKED by an open bug** (see "Open bugs" below): `process_recording_session` completes
-   clip 0 (BASELINE) but hangs on clip 1. Until that's fixed, `offset_ms` and `WAVLM_LAYER_INDEX`
-   remain unmeasured on real footage.
+   (CA-Beard clip, all four phases, valid output CSVs — see changelog). **The recording-level path
+   is now also validated on real footage**: a full 4-clip `process_recording_session` (`rec_ca`,
+   488.7 s) completed — 351 windows assembled on a strictly-monotonic global timeline (each clip
+   rebased by its `file_offset_ms`), baseline fitted on 97 windows, baseline clip's own median
+   deviation ≈ 0 (the §8 sanity check), `deviation_percentile` recording-wide. **Remaining:**
+   `offset_ms` is still 0/unmeasured and `WAVLM_LAYER_INDEX` unre-tuned — both need a recording that
+   has a *real dedicated baseline* clip (rec_ca's clip 0 is just an interview clip treated as
+   baseline; fine for wiring validation, not for a forensic result).
 
-**Open bugs (found by the first real GPU runs 2026-07-07, NOT yet fixed — start here next session):**
+**Bugs found by the first real GPU runs 2026-07-07 (now fixed):**
 
-- **Multi-clip recording hangs on the 2nd clip.** `process_recording_session` runs clip 0
+- **[FIXED 2026-07-07] Multi-clip recording hung on the 2nd clip.** `process_recording_session` runs clip 0
   (BASELINE, 2888 frames) to completion, then **hangs at the start of clip 1's ingestion** (0 %
   GPU, one core busy then idle, frozen indefinitely). faulthandler stack of the hang: the **main
   thread is blocked in `ParallelMediaPipePool.submit_task → task_queue.put()`** (the task pipe is
@@ -314,10 +318,14 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
   single `process_video_session` on any clip succeeds. **Reproduces deterministically** by running
   two ≥30 s clips through one orchestrator (clip 0 OK, clip 1 hangs ~90 s in). Distinct from — and
   downstream of — the pipe-buffer *deadlock* fixed the same day: that was the *result* queue
-  overflowing; this is the *task* queue starving because the workers go quiet. Candidate fixes next
-  session: recreate/reset the MediaPipe pool per clip (mirroring how FaceLock is already recreated
-  per session at `main_pipeline.py:326`); and/or add a worker-liveness check + a `submit_task`
-  timeout so a dead pool fails loudly instead of hanging.
+  overflowing; this is the *task* queue starving because the workers go quiet. **Fix:** the
+  MediaPipe pool is now **rebuilt per clip** — `ParallelMediaPipePool.restart_workers()` (fresh
+  queues + 12 fresh worker processes + a fresh drainer thread) is called at the top of every
+  `process_video_session`, beside the existing per-session FaceLock reset. Verified on the 2-clip
+  repro: clip 0 (69.9 s) **and** clip 1 (60.3 s) both complete, no hang (clip 1 previously hung
+  forever). Cost ≈ 12 `fork()`s (~1 s) per clip. Why the reused workers went silent after clip 0
+  wasn't pinned down (the worker loop is exception-safe, so likely queue/pipe-state corruption at
+  the boundary); rebuilding sidesteps it.
 4. The 2026-07-07 single-pass WavLM rewrite (chunked full-clip forward, fp16 autocast, encoder
    truncation, whole-clip normalization, ~30 s transformer context instead of per-2 s-window
    forwards) is alignment-math-verified (§13) but has never executed on a GPU. Each optimization
@@ -536,3 +544,52 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   600-frame clip (55.7 s); the *multi-clip* task-queue hang is separate and remains open. **State at
   end of session:** all fixes are working-tree only (uncommitted); temporary run scripts used for
   bring-up (`_smoke_run.py` etc.) were removed. **Resume next session at the §12 "Open bugs" entry.**
+- **2026-07-07** — **Multi-clip hang FIXED** (§12): `ParallelMediaPipePool.restart_workers()`
+  rebuilds the pool (fresh queues + workers + drainer) at the top of every `process_video_session`,
+  so each clip gets a healthy pool instead of reusing one that goes silent after clip 0. Verified on
+  the 2-clip repro (clip 0 69.9 s + clip 1 60.3 s, both complete). **Full 4-clip `rec_ca`
+  `process_recording_session` then completed on real footage (488.7 s, 4/4 clips): 351 windows on a
+  monotonic global timeline (rebased by `file_offset_ms`), baseline fitted on 97 windows, baseline
+  clip median deviation ≈ 0 (§8 sanity check), recording-wide `deviation_percentile` — recording-
+  level path validated.** Observation for a later pass: clip 2 (file_index 2, only 1 target segment)
+  shows much larger deviations (median 15.3, max 64.8) than the others (median ≈ 0) — plausibly a
+  real attribution signal, but worth confirming a few features aren't dominating the aggregate. First commit `e709b72` (top repo) landed the per-clip
+  fixes + docs; the deadlock/hang pool fixes (`parallel_pool.py`) and canonicalizer live in nested
+  repos (`mediapipe_pose/`, `ffmpeg_ingestion/`) and still need pushing.
+- **2026-07-08** — **First ground-truth-annotated recording received + validation run designed**
+  (`my_videos/00SubjectA_session1/`): `00_baseline.mp4` + `01..07_interview.mp4`, one subject/one
+  session, with ELAN `.eaf` annotations (`annotated Videos anushree/`, labels **Truth/Lie/Neutral**,
+  ms-precision, single tier). **Video↔annotation mapping verified** (user-confirmed sequential
+  rename `B04C001→00 … B04C008→07`; the naive same-index mapping FAILS the annotation-range ⊆
+  video-duration check — `01_interview`=B04C002 has no `.eaf`). Baseline is itself annotated as one
+  `Neutral` block ✓. Richest clip: `06_interview` = Truth×3 (3.7–64.9 s) → Lie×8 (88.2–309.4 s),
+  within-clip Truth/Lie contrast. **Methodology locked: labels are scoring/validation ONLY — never
+  training or calibration** (N=1 subject; calibration stays unsupervised on `00_baseline`, ELAN
+  labels overlaid post-hoc into the reserved `target_ground_truth` column to measure whether
+  `deviation_magnitude` separates Lie from Truth/Neutral: pooled + within-clip rank AUC).
+  Run design: ELAN scoring is per-clip-local, so the proof-of-signal path needs **no SPOVNOB pass**
+  (per-clip cascade `calibrate=False` → `BaselineCalibrator.fit(00)/apply` → scorer); the full
+  SPOVNOB recording run stays as a separate production-path validation. Env note: canonicalization
+  must use the **system** ffmpeg 4.4.2 (`/usr/bin/ffmpeg`, has NVENC) — `spovnob_env`'s conda ffmpeg
+  4.2.2 is built **without NVENC** and fails `h264_nvenc`; also the project `.venv` python
+  autoactivates over conda, so Stage-2 runs pin the absolute
+  `~/anaconda3/envs/spovnob_env/bin/python`. All 8 clips canonicalized (30 fps CFR verified);
+  cascade parallelized 3-way across processes (disjoint session dirs) to load the RTX 6000.
+- **2026-07-08** — **PROOF-OF-SIGNAL: first quantitative validation against human deception
+  labels — full write-up in `deception_detection/validation/gt_subjectA/RESULTS.md`.** All 8
+  clips cascaded (3-way parallel, ~50 min GPU); calibration fit on `00_baseline` (106 windows /
+  134 features); 509 Lie + 140 Truth pure windows scored. Headline: **the scalar
+  `deviation_magnitude` (L2) carries no usable signal (Lie-vs-Truth AUC 0.384, inverted)** —
+  measured cause: top-5 features carry median 42% (p90 73%) of Σz², dominated by the body
+  `motion_energy` family which runs *higher during Truth* for this subject (freeze-during-lies),
+  so opposing channel directions cancel/invert any scalar. **Individual channels DO separate
+  within-clip** (clip 06, confound-controlled): AU12 velocity dynamics 0.66–0.68, hand↔face
+  distance 0.68, wrist velocity 0.63–0.66, head-pitch tremor 0.63, AU4_var 0.62; gaze
+  variability *inverts* (0.16–0.35, gaze freezes during lies). Consequences: (1) empirical
+  mandate for the ST-GAE per-channel **attribution** end-stage — measured, no longer just
+  doctrine; (2) `deviation_magnitude` is bookkeeping, not signal; (3) aggregates must be
+  direction-aware + per-subject. Caveats: N=1 subject, overlapping windows, 134 comparisons —
+  magnitudes provisional. Artifacts: `pipeline_system_outputs/GT_SUBJECTA_20260708/`
+  (gitignored: outputs + canonical media); committable scripts in `validation/gt_subjectA/`.
+  `.gitignore` += `my_videos/` (4 GB source footage must never stage). Remaining next session:
+  full SPOVNOB production-path run on this recording; ST-GAE design.

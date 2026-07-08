@@ -326,6 +326,12 @@ class MultimodalProductionOrchestrator:
         self.facelock = FaceLock(engine_cache_dir=self.trt_cache_dir)
         self.target_locked = False
 
+        # Rebuild the MediaPipe pool with fresh workers for each clip. The pool
+        # cannot be reused across clips — after the first clip its workers stop
+        # consuming task_queue, hanging the next clip's submit_task() on a full
+        # task pipe (MASTER_REFERENCE §12). ~1 s per clip.
+        self.parallel_pool.restart_workers()
+
         session_dir = self.output_root / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = session_dir / "metadata.json"
