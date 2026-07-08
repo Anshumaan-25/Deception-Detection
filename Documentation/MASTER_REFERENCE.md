@@ -599,3 +599,16 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   null control stays at chance). New in `validation/gt_subjectA/`: `gt_robustness.py` (the
   check) and `clip06_timeline.html` (six channel traces vs the annotated Truth/Lie bands —
   first mock of the per-clip ST-GAE attribution report). RESULTS.md updated with both.
+- **2026-07-08** — **Blink/EAR channel was dead pipeline-wide — found by output audit, fixed,
+  smoke-verified.** Audit of all 8 GT-run windowed CSVs: `blink_count`/`blink_rate`/`ear_mean`/
+  `ear_var` 100 % NaN (and in rec_ca: only nullification-branch zeros). Root cause: the
+  MediaPipe pool computes EAR/is_blinking into its `lip_logs` stream, but the merge seam
+  (`main_pipeline.py` zip loop) only copied `is_moving` — `ear`/`is_blinking` never reached
+  `pose_data`, so the frame CSV had no such columns and the window engines' `if "is_blinking"
+  in window_df` guard silently skipped. Fixes: seam now copies both into `pose_rec`;
+  `parallel_pool.py` keeps `ear=NaN` when FaceMesh is missing (the old 0.0 sentinel would read
+  as a permanent blink; verified nothing consumes lip-log `ear` — the anchor uses `is_moving`).
+  12 s real-footage smoke: frame CSV has `ear` (0.188–0.362, 0 % NaN), windowed blink features
+  fully populated, an actual blink lands in one window (count 1, EAR dip + var spike).
+  NOTE: `GT_SUBJECTA_20260708` outputs predate the fix (blink features NaN there); the next
+  full run (SPOVNOB production pass) regenerates them with blink alive.

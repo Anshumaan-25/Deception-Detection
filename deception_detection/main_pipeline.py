@@ -457,6 +457,12 @@ class MultimodalProductionOrchestrator:
                 pose_rec["mismatch_incongruence"] = mismatch
                 pose_rec["silent_incongruence"] = silent_speech
                 pose_rec["diarizer_conf"] = diarizer_conf
+                # Blink/EAR seam fix: the pool computes these in lip_logs but they
+                # were never merged into pose_data, so the frame CSV had no
+                # ear/is_blinking columns and every windowed blink feature
+                # (blink_count/rate, ear_mean/var) was NaN pipeline-wide.
+                pose_rec["ear"] = lip_rec.get("ear", np.nan)
+                pose_rec["is_blinking"] = lip_rec.get("is_blinking", 0)
 
             self.audio_pipeline.execute_isolation_pipeline(
                 input_wav_path=canonical_wav_path,
