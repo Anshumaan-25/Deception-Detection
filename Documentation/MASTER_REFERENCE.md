@@ -6,12 +6,13 @@
 > If this document and the code disagree, **the code wins** — and the discrepancy is a bug in this
 > document that must be fixed.
 >
-> **Last synced with code:** 2026-07-09 — full production-path run on SubjectA complete
-> (`validation/gt_subjectA/RESULTS_PRODUCTION.md`): SPOVNOB Stage-1 → recording-level Stage-2
-> (`REC_SUBJECTA`, first genuinely-calibrated recording, blink alive, isolated audio), signal
-> replicated with an 11-node attribution table. Click UI hardened (PTS/audio/seed-removal),
-> HF air-gap hardcoded, ST-GAE design finalized. Open: canonicalizer 80 ms A/V fix before the
-> ST-GAE build (§12.1). Next: implement the ST-GAE.
+> **Last synced with code:** 2026-07-09 — production-path run on SubjectA complete
+> (`RESULTS_PRODUCTION.md`, signal replicated, 11-node attribution table); canonicalizer 80 ms
+> A/V desync **fixed** (§12.1, verified 0 ms); **ST-GAE implemented, evaluated, and FALSIFIED by
+> its own pre-registered Bar 4** (`STGAE_RESULTS.md`, `ST_GAE_DESIGN.md` §10) — reconstruction
+> tracks clip identity, not deception. **The marginal per-channel z-score attribution is the
+> shippable method** (0.68–0.70). Next: re-tune `WAVLM_LAYER_INDEX`; more annotated subjects
+> (N=1 is the ceiling on every claim).
 
 ---
 
@@ -328,8 +329,11 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
    *segments* (is_audio_active), NOT the frame-level WavLM↔video pooling in `frame_alignment.py`
    — so the fix belongs in the **canonicalizer** (align both streams to a common zero, e.g. trim
    the pre-video audio: `atrim=start=(v.start−a.start)`) so all downstream consumers get synced
-   data. Deferred to the ST-GAE build (re-canonicalize + re-cascade); the current REC_SUBJECTA
-   outputs carry the 80 ms and are fine for window-level scoring.
+   data. **FIXED 2026-07-09** — `canonicalizer.py` now probes per-stream start_time and trims the
+   audio front by the skew; verified end-to-end (mouth↔energy cross-correlation lag −100 ms →
+   **0 ms** on re-cascaded `REC_SUBJECTA_SYNCED`). The recording-run also passes `offset_ms=80`
+   to `segments_for` so the diarization is_audio_active mask lands on the rebased frames. (The
+   original REC_SUBJECTA window-level deliverable still carries the 80 ms — negligible there.)
 2. `WAVLM_LAYER_INDEX = 14` is a proportional-depth placeholder (HuBERT-base layer 7/12 scaled to
    24 layers), not re-tuned on real audio. Same unblock as (1).
 3. ~~No real end-to-end run through the GPU stack.~~ **Per-clip path resolved 2026-07-07**: the
@@ -419,29 +423,27 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 | `verify_frame_acoustics.py` | frame-level WavLM↔30fps alignment + window-formula parity + 8 bug regressions | ✅ 30/30 |
 | `verify_wavlm_truncation.py` | StableLayerNorm encoder-truncation correctness (tiny synthetic model, no GPU) | ✅ 9/9 |
 | `verify_acoustic_gating.py` | window-level acoustic block gated by `is_audio_active` | ✅ 4/4 |
+| `verify_stgae.py` | ST-GAE graph_spec / masking / feature-count-norm loss / zero-grad masking / determinism / noise-failure (CPU torch) | ✅ 16/16 |
 
 ## 14. Roadmap (future, in intended order — nothing scheduled)
 
-1. **SPOVNOB production pass on `00SubjectA_session1`** (next session): full Stage-1 diarization
-   → `process_recording_session` end-to-end (also regenerates outputs with blink/EAR alive);
-   measure `offset_ms`; re-tune `WAVLM_LAYER_INDEX` empirically. *(The per-clip proof-of-signal
-   half of "real-footage validation" completed 2026-07-08 — see changelog.)*
-2. **ST-GAE end-stage** (concept/design only — now with an **empirical mandate**: the 2026-07-08
-   validation measured that no scalar aggregate carries signal while per-channel deviations do):
-   spatio-temporal graph autoencoder over the raw synchronized 30 fps frame-level features
-   (Phase 2 CSV). Fit per subject on the baseline clip (= "normal"); reconstruction error on
-   interview clips = anomaly. Deliverable: **Temporal Anomaly Attribution Report** — timestamped
-   cognitive-friction segments + node-wise reconstruction-error map (visual mock:
-   `validation/gt_subjectA/clip06_timeline.html`). Design must be direction-aware per channel
-   (e.g. this subject: AU12/hand/wrist ↑ during lies, gaze variability + body motion ↓).
-   Open questions: node/edge definition; per-subject fit cost; minimum baseline duration;
-   replace-vs-complement the z-score path; VideoMAE v2's role.
-3. **VideoMAE v2** (deferred, decision 2026-07-08: hold until the ST-GAE design settles whether
-   it's needed): deep spatiotemporal latents as a 4th parallel extractor branch, presumed to
-   feed the ST-GAE graph.
-4. **Supervised training path** (distant): the ELAN-annotated corpus +
-   `temporal_window_generator.py` exist for this; explicitly out of scope now.
-5. **Production deployment target**: resolve dev-box vs nv05 (SPOVNOB pin incompatibility).
+1. ~~SPOVNOB production pass~~ + ~~ST-GAE end-stage~~ — **both done 2026-07-09** (see changelog).
+   Production run validated (`REC_SUBJECTA`), and the reconstruction-ST-GAE was implemented,
+   evaluated, and **falsified by its own pre-registered Bar 4** (`validation/gt_subjectA/
+   STGAE_RESULTS.md`; `ST_GAE_DESIGN.md` §10). The **marginal per-channel z-score attribution is
+   the shippable method** (within-06 AUCs 0.68–0.70, direction-aware).
+2. **Remaining validation debt:** re-tune `WAVLM_LAYER_INDEX` empirically; the one-time WavLM
+   `use_amp`/`truncate_encoder` fp32 A/B (§12.4).
+3. **Graph attribution v2 (if revisited):** swap reconstruction for a **predictive/contrastive**
+   objective (predict a channel from cross-modal neighbours; flag broken couplings), or
+   **per-feature** (not node-aggregated) residuals, or a **supervised** head — the reconstruction
+   framing is falsified (§10). The tested `stgae/` package is the reusable substrate.
+4. **VideoMAE v2** (deferred, no re-entry): its criterion presumed a *working* ST-GAE, which the
+   2026-07-09 evaluation did not yield.
+5. **Supervised training path** (distant): needs N>1 annotated subjects; the ELAN corpus +
+   `temporal_window_generator.py` exist for it. **N=1 is the current hard ceiling on every
+   claim** — more annotated subjects is the single highest-value next input.
+6. **Production deployment target**: resolve dev-box vs nv05 (SPOVNOB pin incompatibility).
 
 ## 15. Document governance
 
@@ -704,3 +706,26 @@ line. Completed plan docs are frozen as history, never edited retroactively.
     nodes LOCKED with **mandatory feature-count-normalized loss** (÷F_n so the 2-dim blink node
     isn't drowned by the 18-dim voice node); §6 gains **Bar 4 — Holdout Truth Stability**, the
     go/no-go false-positive gate against small-baseline overfitting.
+- **2026-07-09** — **Canonicalizer A/V-sync fix + full ST-GAE implementation + v1 falsification.**
+  - **Canonicalizer** (`ffmpeg_ingestion/core/canonicalizer.py`): probes per-stream `start_time`
+    and trims the audio front by the video-vs-audio skew, correcting the ~80 ms open-GOP A/V
+    desync (§12.1) at the source so all downstream consumers get synced streams. Verified:
+    mouth↔energy cross-correlation lag −100 ms → **0 ms** on the re-cascaded `REC_SUBJECTA_SYNCED`.
+  - **ST-GAE package** (`deception_detection/stgae/`: graph_spec, dataset, model, fit, attribute)
+    implemented per `ST_GAE_DESIGN.md`: 11-node graph, learned adjacency, tiny masked autoencoder
+    (23 k params, feature-count-normalized loss), per-subject baseline fit with anti-overfit
+    stack + loud degenerate-fit gate. Tests `tests/verify_stgae.py` (16 checks, green): graph
+    integrity, masking, ÷F_n loss equality (blink==voice), zero-grad on masked nodes,
+    determinism, and an overfit-on-noise failure that fires. A key model fix surfaced from the
+    tests: the temporal-only bottleneck let the AE *copy* the input (reconstructs noise); added a
+    channel bottleneck (embed 16→latent 4) so reconstruction is genuinely compressive.
+  - **v1 FALSIFIED** (`validation/gt_subjectA/STGAE_RESULTS.md`; `ST_GAE_DESIGN.md` §10): fit is
+    healthy (recon ratio 0.274) but attribution fails all four bars — reconstruction error tracks
+    *distance from the neutral baseline* (clip identity), not deception (the most **truthful**
+    clip 04 is the **most** "anomalous"; all-lie clip 07 nearly the least). Bar 4 truth-flag-rate
+    81% vs baseline 6% — exactly the small-baseline brittleness it guards against. Root cause is
+    structural (domain gap dominates + node-aggregation dilutes the discriminative signal), not a
+    hyperparameter. **The marginal per-channel z-score attribution remains the shippable method**
+    (0.68–0.70). VideoMAE stays deferred (no working ST-GAE to feed it). The pre-registered bars
+    did their job — prevented shipping a plausible-but-broken model. `stgae/` retained as the
+    substrate for a future predictive/contrastive/supervised v2.

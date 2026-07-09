@@ -70,3 +70,5 @@ my_videos/
 
 # SPOVNOB venv symlink (local; the real venv is the repo-root .venv)
 audio_diarization/.venv
+
+deception_detection/stgae/__pycache__/

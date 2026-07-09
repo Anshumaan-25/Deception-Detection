@@ -228,3 +228,31 @@ false-positive gate (§6 Bar 4 — Holdout Truth Stability, the go/no-go).
 Open (empirical, answered by the first fit): minimum baseline duration (§4.5 failure test);
 whether D=16 / 3 blocks is the right size (val-error plateau will say); whether coupling
 anomalies (§5.3) add analyst value beyond node errors.
+
+## 10. EMPIRICAL OUTCOME (2026-07-09) — v1 FALSIFIED by the pre-registered bars
+
+The design above was implemented in full (`deception_detection/stgae/`, 16-check test suite
+green) and evaluated on SubjectA's A/V-synced data. Full results:
+`deception_detection/validation/gt_subjectA/STGAE_RESULTS.md`. **Verdict: the
+reconstruction-based ST-GAE does not work on this data and is discarded per §6 Bar 4.**
+
+- The **fit is healthy** (recon ratio 0.274 — learns/generalizes the baseline), but the
+  **attribution fails every bar.** Reconstruction error tracks *distance from the neutral
+  baseline* (clip identity), not deception: all interview clips blow up vs baseline, and the
+  most *truthful* clip (04, Truth×2) is the *most* "anomalous" while the all-lie clip (07) is
+  nearly the least. Bar 1 best within-06 node AUC = 0.605 (FAIL ≥0.69); Bar 4 truth-window
+  flag-rate 81% vs baseline 6% (FAIL — the small-baseline brittleness Bar 4 exists to catch).
+- **Root cause (structural, not a hyperparameter):** (1) the baseline↔interview domain gap
+  super-linearly dominates the AE's out-of-domain reconstruction error; (2) node-aggregated
+  reconstruction dilutes the small discriminative signal (AU12 velocity etc.) that the marginal
+  |z| path isolates. Reconstruction-over-an-aggregated-graph-fit-on-one-short-baseline is the
+  wrong lens.
+- **Consequence:** the **marginal per-channel z-score attribution remains the method** (validated
+  0.68–0.70, direction-aware — RESULTS_PRODUCTION.md). VideoMAE stays deferred (its re-entry
+  criterion presumes a *working* ST-GAE, which we don't have). Any future graph attempt must swap
+  the reconstruction objective for a **predictive/contrastive** one (predict a channel from its
+  cross-modal neighbours; flag broken couplings), **per-feature** residual targeting, or a
+  **supervised** head once N>1 subjects exist. The tested package is a reusable substrate for that.
+- The pre-registered bars did their job: they prevented shipping a plausible-but-broken model and
+  redirected to the method that measurably works. §1–§9 above are retained as the record of the
+  v1 hypothesis; this §10 is the outcome.
