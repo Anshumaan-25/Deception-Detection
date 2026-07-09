@@ -6,10 +6,12 @@
 > If this document and the code disagree, **the code wins** — and the discrepancy is a bug in this
 > document that must be fixed.
 >
-> **Last synced with code:** 2026-07-08 — committed baseline `04f660b` (top repo; nested:
-> `mediapipe_pose` @ `f68f562`, `ffmpeg_ingestion` @ `5f2c65f`). Working trees clean. State:
-> ground-truth proof-of-signal validation complete (`validation/gt_subjectA/RESULTS.md`);
-> blink/EAR seam fixed; next up: SPOVNOB production pass on SubjectA + ST-GAE design.
+> **Last synced with code:** 2026-07-09 — full production-path run on SubjectA complete
+> (`validation/gt_subjectA/RESULTS_PRODUCTION.md`): SPOVNOB Stage-1 → recording-level Stage-2
+> (`REC_SUBJECTA`, first genuinely-calibrated recording, blink alive, isolated audio), signal
+> replicated with an 11-node attribution table. Click UI hardened (PTS/audio/seed-removal),
+> HF air-gap hardcoded, ST-GAE design finalized. Open: canonicalizer 80 ms A/V fix before the
+> ST-GAE build (§12.1). Next: implement the ST-GAE.
 
 ---
 
@@ -231,6 +233,18 @@ Four passes:
 Returns a dict: `recording_id`, `baseline_file_index`, `baseline_stats_json`,
 `recording_calibrated_csv`, `clips[]`.
 
+**Sanity check — the correct expectation (corrected 2026-07-09).** Earlier notes said "the
+baseline clip's own deviations land near 0." That is **mathematically wrong** for
+`deviation_magnitude = √(Σ z²)` over ~134 features: a baseline window z-scored against its own
+clip's stats sits ≈ `√(n_features)` from the centroid (≈ 11.6 for 134 features), **not** 0. The
+right invariants are: (a) per-feature z across baseline windows has mean ≈ 0, std ≈ 1
+(construction); (b) baseline `deviation_magnitude` median ≈ `√(n_features)`; (c) interview clips
+that genuinely deviate sit **above** the baseline median. A baseline median of **0** is the
+signature of a **degenerate** run (all features NaN/constant → `√0`), not a healthy one — which
+is exactly what the `rec_ca` dry-run turned out to be (see §12 / 2026-07-09 changelog). First
+healthy calibration: `REC_SUBJECTA` (baseline |mean z| 0.000, std 1.000, median dev 9.85;
+interviews 11–20).
+
 ## 9. Output artifacts (`pipeline_system_outputs/`)
 
 Per clip (`<session_id>/`):
@@ -299,9 +313,23 @@ hidden_size-driven latent reshape — 1024/16=64 per latent group).
 
 **Validation debt (remaining):**
 
-1. `offset_ms` audio↔video alignment defaults to 0; never empirically measured. Unblocked:
-   `my_videos/00SubjectA_session1/` has a real dedicated baseline — measure during the SPOVNOB
-   production pass.
+1. **`offset_ms` — MEASURED 2026-07-09: an ~80 ms A/V desync exists in the canonical files
+   (video LEADS audio by 80 ms), and it is NOT yet compensated.** Root cause: the SubjectA
+   MPEG-2 source is open-GOP — its video stream `start_time` is 0.080 s (two leading
+   AV_PKT_FLAG_DISCARD B-frames) while audio `start_time` is 0.000 s, so there is 80 ms of audio
+   before the first video frame. The canonicalizer's ffmpeg drops the video's 80 ms lead
+   (rebases video to 0) but keeps audio at 0 → canonical-video-time T corresponds to
+   canonical-audio-time T−80 ms. Confirmed two ways: exact from PTS (`v.start_time − a.start_time
+   = 80 ms`, consistent across all 8 clips) and behaviorally (mouth-open ⟶ acoustic-energy
+   cross-correlation peaks at ~−100 ms = 80 ms artifact + ~20 ms physiology). Impact: **negligible
+   for the 2 s / 1 s window-level work** (ELAN AUCs, is_audio_active) — 80 ms is 2.4 frames; but
+   **material for the frame-level ST-GAE congruence node**, which must not learn an artificial
+   cross-modal lag. Note `process_recording_session`'s `offset_ms` only shifts diarization
+   *segments* (is_audio_active), NOT the frame-level WavLM↔video pooling in `frame_alignment.py`
+   — so the fix belongs in the **canonicalizer** (align both streams to a common zero, e.g. trim
+   the pre-video audio: `atrim=start=(v.start−a.start)`) so all downstream consumers get synced
+   data. Deferred to the ST-GAE build (re-canonicalize + re-cascade); the current REC_SUBJECTA
+   outputs carry the 80 ms and are fine for window-level scoring.
 2. `WAVLM_LAYER_INDEX = 14` is a proportional-depth placeholder (HuBERT-base layer 7/12 scaled to
    24 layers), not re-tuned on real audio. Same unblock as (1).
 3. ~~No real end-to-end run through the GPU stack.~~ **Per-clip path resolved 2026-07-07**: the
@@ -640,3 +668,39 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   now run on GPU; only the fp32 A/B remains); §14 roadmap item 1 → SPOVNOB production pass,
   item 2 carries the empirical attribution mandate + per-channel directions, item 3 records the
   VideoMAE hold decision.
+- **2026-07-09** — **First full PRODUCTION-path run on SubjectA + click-UI hardening + air-gap
+  fixes.** SPOVNOB Stage-1 (`rec_subjectA`, operator-clicked, hash chain intact, 26 clean
+  segments) → recording-level Stage-2 (`REC_SUBJECTA`, 8 clips, real target-only audio, blink
+  alive) → ELAN re-score. Full write-up: `validation/gt_subjectA/RESULTS_PRODUCTION.md`.
+  - **Click UI (`click_ui.py`, `vision.py`) — three operator-reported issues fixed + self-tested:**
+    (1) **Frame/PTS mismatch root-caused** — the SubjectA MPEG-2 is open-GOP with 2 leading
+    `AV_PKT_FLAG_DISCARD` packets, so `video_frame_pts_ms` listed 2640 PTS for 2638 decoded
+    frames and **mislabeled every frame (and click) 80 ms early on all 8 clips**; now excludes
+    discard-flagged packets (pairing exact, first frame 80 ms). Cache schema → v2 (stale v1
+    pre-scans carry the shifted pairing). (2) **Audio playback** added (`/audio` endpoint +
+    play/pause + frame-sync + `p` hotkey) — an off-screen interviewer is now identifiable by ear.
+    (3) **Per-seed removal** (`remove_seed` + ✕ buttons) — a misclicked beard-mode seed no longer
+    forces a full restart. self-test extended (12c) + green.
+  - **Air-gap mandate hardcoded** (defense-grade): `acoustic_extractor.py` forces
+    `TRANSFORMERS_OFFLINE`/`HF_HUB_OFFLINE`/`HF_DATASETS_OFFLINE` before importing transformers
+    (clip 06 had failed mid-run on a huggingface 407 proxy phone-home); `environment_gate.py`
+    (SPOVNOB side, already offline) gains `HF_DATASETS_OFFLINE` for parity.
+  - **First genuinely-calibrated recording.** Baseline z |mean| 0.000 / std 1.000, all 134
+    features non-NaN (blink included), median dev 9.85 ≈ √134. Interviews deviate above baseline
+    (11–20). Corrected the §8 "baseline ≈ 0" myth (mathematically impossible for an L2 aggregate;
+    0.0 = degenerate, which is what rec_ca was).
+  - **offset_ms MEASURED** (§12.1): ~80 ms A/V desync (video leads audio), open-GOP artifact,
+    exact from PTS + corroborated by mouth↔energy cross-correlation. Negligible at 2 s windows;
+    must be fixed in the canonicalizer before the frame-level ST-GAE. Deferred to ST-GAE build.
+  - **Signal REPLICATED on the independent production pipeline** (isolated audio, real
+    diarization). Within-06 visual AUCs reproduce to ±0.01 (AU12 tremor 0.696, hand↔face 0.680,
+    wrist 0.667; gaze inversion **bit-identical** 0.162). **Full 11-node attribution table**
+    (RESULTS_PRODUCTION.md) shows a bipolar freeze+leakage signature: au_mouth/hands/au_upper
+    activate (0.63–0.70), gaze/head/blink/voice/body freeze (0.16–0.38). Blink's first-ever
+    measurement: weak/inverse (0.365, freeze cluster). Isolated `wavlm_latent_4` 0.574 (was
+    0.608 whole-clip — interviewer contamination removed). Empirically re-confirms the
+    direction-aware ST-GAE mandate.
+  - **ST-GAE design (`Documentation/ST_GAE_DESIGN.md`, new)** finalized + user-reviewed: 11
+    nodes LOCKED with **mandatory feature-count-normalized loss** (÷F_n so the 2-dim blink node
+    isn't drowned by the 18-dim voice node); §6 gains **Bar 4 — Holdout Truth Stability**, the
+    go/no-go false-positive gate against small-baseline overfitting.

@@ -61,6 +61,7 @@ DETERMINISM_ENV: dict = {
     "CUBLAS_WORKSPACE_CONFIG": ":4096:8",   # CUDA determinism constant #4
     "HF_HUB_OFFLINE": "1",                  # Model Vendoring Mandate
     "TRANSFORMERS_OFFLINE": "1",            # Model Vendoring Mandate
+    "HF_DATASETS_OFFLINE": "1",             # Model Vendoring Mandate (datasets path)
 }
 for _key, _value in DETERMINISM_ENV.items():
     os.environ[_key] = _value

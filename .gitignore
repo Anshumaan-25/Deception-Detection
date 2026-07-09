@@ -67,3 +67,6 @@ deception_detection/opencv_streaming/
 audio_diarization/session/
 audio_diarization/wheelhouse/
 my_videos/
+
+# SPOVNOB venv symlink (local; the real venv is the repo-root .venv)
+audio_diarization/.venv

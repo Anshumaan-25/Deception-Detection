@@ -82,16 +82,28 @@ class FrameFaces:
 
 def video_frame_pts_ms(video_path: Path | str) -> List[int]:
     """All video packet PTS values in integer milliseconds, sorted
-    ascending (presentation order)."""
+    ascending (presentation order).
+
+    Packets carrying the AV_PKT_FLAG_DISCARD flag ('D' in ffprobe's
+    flags column) are excluded: the decoder never emits a frame for
+    them, so listing them would shift the positional frame<->PTS
+    pairing for every subsequent frame. Seen in the wild on open-GOP
+    MPEG-2 footage whose leading B-frames reference a frame before the
+    first keyframe (2 discard packets at pts 0/40 ms -> every decoded
+    frame previously mislabeled 80 ms early)."""
     out = subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0",
-         "-show_entries", "packet=pts_time", "-of", "csv=p=0",
+         "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0",
          str(video_path)],
         capture_output=True, text=True, check=True,
     )
     pts: List[int] = []
     for line in out.stdout.splitlines():
-        token = line.strip().split(",")[0]
+        fields = line.strip().split(",")
+        token = fields[0]
+        flags = fields[1] if len(fields) > 1 else ""
+        if "D" in flags:
+            continue
         if token and token != "N/A":
             pts.append(decimal_seconds_to_ms(token))
     pts.sort()

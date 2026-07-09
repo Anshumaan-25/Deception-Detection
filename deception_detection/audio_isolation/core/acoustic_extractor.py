@@ -1,3 +1,15 @@
+# AIR-GAP MANDATE (defense-grade deployment): the WavLM weights are always
+# vendored/local, so force HuggingFace fully offline BEFORE importing
+# transformers. Any outbound HEAD to huggingface.co is a critical failure — a
+# proxy 407 or air-gap blackhole would otherwise abort at model load (observed
+# 2026-07-09: clip 06 lost the phone-home race and failed the whole clip). The
+# SPOVNOB side already does this in environment_gate.py; this is the matching
+# guard for the deception side, hardcoded so no entrypoint can forget it.
+import os
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["HF_DATASETS_OFFLINE"] = "1"
+
 import numpy as np
 import torch
 from transformers import WavLMModel, Wav2Vec2FeatureExtractor

@@ -121,7 +121,10 @@ from layer1_enrollment.vision import (
 from session_manifest import canonical_json, sha256_of_file, sha256_of_obj
 
 # --- Tool constants -----------------------------------------------------------
-CACHE_SCHEMA = "spovnob-clickui-prescan-v1"
+# v2: vision.video_frame_pts_ms now excludes AV_PKT_FLAG_DISCARD packets
+# (open-GOP leading B-frames); cached pre-scans built under v1 carry a
+# shifted frame<->PTS pairing and must be rebuilt.
+CACHE_SCHEMA = "spovnob-clickui-prescan-v2"
 DISPLAY_MAX_WIDTH = 800          # display JPEGs are capped at this width
 DISPLAY_JPEG_QV = 4              # ffmpeg -q:v (2=best .. 31=worst)
 DEFAULT_PORT = 5050
@@ -520,6 +523,28 @@ class ClickSession:
             self.seed_anchors = []
         elif click_type == "anti":
             self.anti = None
+
+    def remove_seed(self, index: int) -> Dict[str, Any]:
+        """Remove ONE speaking seed by display index (0 = primary click).
+        Beard mode rebuilds F_target as the mean of the remaining seed
+        anchors; the anti click falls with it (it was validated against
+        the old F_target). Non-beard mode has a single speaking click,
+        so only index 0 is meaningful and behaves like clear."""
+        seeds = ([] if self.speaking is None
+                 else [self.speaking] + self.extra_seeds)
+        if not 0 <= index < len(seeds):
+            return self._fail("invalid_request", {"index": index})
+        if not self.target_bearded or len(seeds) == 1:
+            self.clear("speaking")
+            return {"ok": True, "message": "Speaking click removed."}
+        del seeds[index]
+        del self.seed_anchors[index]
+        self.speaking, self.extra_seeds = seeds[0], seeds[1:]
+        self.f_target = _mean_embedding(self.seed_anchors)
+        self.anti = None
+        return {"ok": True, "message":
+                f"Seed {index + 1} removed — {len(seeds)} seed(s) remain; "
+                "the target lock changed, so re-register the anti click."}
 
     # -- export ----------------------------------------------------------------------
 
@@ -1063,6 +1088,27 @@ def create_app(ui: UISession, session: ClickSession):
             session.clear(click_type)
             return _no_store({"ok": True, "state": session.state_payload()})
 
+    @app.post("/remove_seed")
+    def post_remove_seed() -> Any:
+        data = request.get_json(silent=True) or {}
+        index = data.get("index")
+        if isinstance(index, bool) or not isinstance(index, int):
+            return _no_store({"ok": False, "reason": "invalid_request",
+                              "state": session.state_payload()}), 400
+        with lock:
+            result = session.remove_seed(index)
+            result["state"] = session.state_payload()
+        return _no_store(result)
+
+    @app.get("/audio")
+    def get_audio() -> Any:
+        # The Layer-0 16 kHz mono WAV the VAD strip was computed from —
+        # served with range support so the browser can seek. PTS-true:
+        # t seconds into this file = t*1000 + audio_start_pts_ms.
+        from flask import send_file
+        return send_file(ui.file_audio.wav_path, mimetype="audio/wav",
+                         conditional=True, max_age=86400 * 30)
+
     @app.post("/export")
     def post_export() -> Any:
         data = request.get_json(silent=True) or {}
@@ -1149,6 +1195,13 @@ HTML_PAGE = r"""<!doctype html>
   .beard label.toggle{margin-top:8px}
   #beardHint{display:none;margin-top:8px;line-height:1.45}
   .seedlist{display:none;margin-top:6px;color:var(--green)}
+  .seedlist .seed{display:inline-flex;align-items:center;gap:5px;margin-right:12px}
+  .seedlist button{background:#23272e;border:1px solid var(--line);color:var(--red);
+                   border-radius:3px;cursor:pointer;padding:0 6px;font-size:11px;line-height:16px}
+  #playBtn{background:#23272e;border:1px solid var(--line);color:var(--text);
+           border-radius:4px;cursor:pointer;padding:4px 12px;font-size:13px;min-width:44px}
+  #playBtn.playing{border-color:var(--green);color:var(--green)}
+  audio#player{display:none}
 </style>
 </head>
 <body>
@@ -1161,9 +1214,11 @@ HTML_PAGE = r"""<!doctype html>
   <div id="warnings"></div>
   <div id="stage"><canvas id="frame"></canvas></div>
   <div class="row">
+    <button id="playBtn" title="play / pause audio (p)">&#9654;</button>
     <input type="range" id="scrub" min="0" max="0" value="0" step="1">
     <span id="clock"></span>
   </div>
+  <audio id="player" src="audio" preload="auto"></audio>
   <canvas class="strip" id="stripFaces" height="16"></canvas>
   <canvas class="strip" id="stripVad" height="10"></canvas>
   <div class="hint legend">
@@ -1172,6 +1227,7 @@ HTML_PAGE = r"""<!doctype html>
     audio: <span style="color:var(--green)">&#9632; Silero speech</span>
     &nbsp;·&nbsp; click a strip to seek &nbsp;·&nbsp;
     <b>&larr;/&rarr;</b> step (<b>&#8679;</b> ×10) &nbsp;·&nbsp;
+    <b>p</b> play/pause audio &nbsp;·&nbsp;
     <b>s</b>/<b>a</b> mode &nbsp;·&nbsp; click a face on the frame to register
   </div>
 
@@ -1257,7 +1313,7 @@ function ensure(i){
   }
   return imgs.get(i);
 }
-function show(i){
+function show(i, fromAudio){
   cur = Math.max(0, Math.min(N - 1, i));
   $("scrub").value = cur;
   const im = ensure(cur);
@@ -1265,6 +1321,29 @@ function show(i){
   if (im && im.complete && im.naturalWidth) draw();
   updateClock();
   drawStrips();
+  // Operator-driven seek while audio is playing: pull the audio along.
+  const a = $("player");
+  if (!fromAudio && !a.paused)
+    a.currentTime = Math.max(0, (TL[cur].pts_ms - META.audio_start_pts_ms) / 1000);
+}
+
+/* ---------- audio playback (PTS-true 16 kHz WAV from the Layer-0 scan) ---------- */
+function followAudio(){
+  const a = $("player");
+  if (a.paused) return;
+  const pts = a.currentTime * 1000 + META.audio_start_pts_ms;
+  const i = idxForPts(pts);
+  if (i !== cur) show(i, true);
+  requestAnimationFrame(followAudio);
+}
+function playPause(){
+  const a = $("player");
+  if (a.paused){
+    a.currentTime = Math.max(0, (TL[cur].pts_ms - META.audio_start_pts_ms) / 1000);
+    a.play();
+  } else {
+    a.pause();
+  }
 }
 function updateClock(){
   if (!N) return;
@@ -1430,14 +1509,27 @@ function applyBeardUI(){
   $("modeS").innerHTML = beard ? "Add seed&nbsp;(s)" : "Speaking click&nbsp;(s)";
   if (beard){ $("includeAnti").checked = true; }
   $("includeAntiRow").style.display = beard ? "none" : "";
-  // Render the extra seed list.
+  // Render the seed list with a per-seed remove button (misclicks no
+  // longer force clearing every seed and starting over).
   const list = state.extra_seeds || [];
   const sl = $("seedList");
-  if (beard && (state.speaking || list.length)){
-    const items = [];
-    if (state.speaking) items.push("seed 1 @ " + state.speaking.pts_ms + " ms");
-    list.forEach((c, i) => items.push("seed " + (i+2) + " @ " + c.pts_ms + " ms"));
-    sl.textContent = items.join("   ·   ");
+  sl.textContent = "";
+  const seeds = [];
+  if (state.speaking) seeds.push(state.speaking);
+  for (const c of list) seeds.push(c);
+  if (beard && seeds.length){
+    seeds.forEach((c, i) => {
+      const span = document.createElement("span");
+      span.className = "seed";
+      const label = document.createElement("span");
+      label.textContent = "seed " + (i+1) + " @ " + c.pts_ms + " ms";
+      const btn = document.createElement("button");
+      btn.textContent = "✕";
+      btn.title = "remove this seed";
+      btn.addEventListener("click", () => removeSeed(i));
+      span.appendChild(label); span.appendChild(btn);
+      sl.appendChild(span);
+    });
     sl.style.display = "block";
   } else {
     sl.style.display = "none";
@@ -1499,6 +1591,12 @@ async function clearClick(type){
   if (type === "speaking") lastMsg.anti = null;
   applyState(resp.state);
 }
+async function removeSeed(index){
+  const resp = await postJSON("remove_seed", {index: index});
+  lastMsg.speaking = resp.ok ? {ok: true, message: resp.message} : null;
+  lastMsg.anti = null;
+  applyState(resp.state);
+}
 async function exportClicks(){
   const resp = await postJSON("export", {include_anti: $("includeAnti").checked});
   const out = $("exportOut");
@@ -1540,6 +1638,18 @@ async function init(){
 
   $("scrub").addEventListener("input", () => show(+$("scrub").value));
   $("frame").addEventListener("click", registerClick);
+  $("playBtn").addEventListener("click", playPause);
+  const player = $("player");
+  player.addEventListener("play", () => {
+    $("playBtn").innerHTML = "&#10074;&#10074;";
+    $("playBtn").classList.add("playing");
+    requestAnimationFrame(followAudio);
+  });
+  for (const ev of ["pause", "ended"])
+    player.addEventListener(ev, () => {
+      $("playBtn").innerHTML = "&#9654;";
+      $("playBtn").classList.remove("playing");
+    });
   $("modeS").addEventListener("click", () => setMode("speaking"));
   $("modeA").addEventListener("click", () => setMode("anti"));
   $("clearS").addEventListener("click", () => clearClick("speaking"));
@@ -1558,6 +1668,7 @@ async function init(){
     else if (ev.key === "End"){ show(N - 1); ev.preventDefault(); }
     else if (ev.key === "s") setMode("speaking");
     else if (ev.key === "a") setMode("anti");
+    else if (ev.key === "p"){ playPause(); ev.preventDefault(); }
   });
 }
 init();
@@ -1814,6 +1925,25 @@ def _selftest() -> int:
         assert parsed.target_bearded and len(parsed.extra_seeds) == 1
         assert parsed.anti is not None
 
+    # 12c. Per-seed removal: one misclicked seed can be removed without
+    # clearing the rest; F_target rebuilds and the stale anti falls.
+    assert beard.state_payload()["seed_count"] == 2
+    assert beard.anti is not None
+    r = beard.remove_seed(5)
+    assert not r["ok"] and r["reason"] == "invalid_request", r
+    r = beard.remove_seed(1)
+    assert r["ok"], r
+    assert beard.state_payload()["seed_count"] == 1
+    assert beard.extra_seeds == [] and beard.f_target is not None
+    assert beard.anti is None, "anti must fall when the target lock changes"
+    r = beard.remove_seed(0)          # removing the last seed == clear
+    assert r["ok"] and beard.speaking is None and beard.f_target is None
+    # Non-beard mode: remove_seed(0) behaves exactly like clear("speaking").
+    plain = ClickSession(build_frames(), file_audio, params)
+    assert plain.register_speaking(4000, 400.0, 300.0)["ok"]
+    assert plain.remove_seed(0)["ok"]
+    assert plain.speaking is None and plain.f_target is None
+
     # 13. Clearing the speaking click clears the dependent state.
     session.clear("speaking")
     assert session.speaking is None and session.f_target is None
@@ -1856,7 +1986,8 @@ def _selftest() -> int:
     for needle in ('id="frame"', 'id="scrub"', 'id="stripFaces"',
                    'id="stripVad"', 'id="includeAnti"', 'id="exportBtn"',
                    'id="beardTarget"', 'id="beardInterviewer"', 'id="seedList"',
-                   '"click"', '"export"', '"beard"',
+                   'id="playBtn"', 'id="player"', 'src="audio"',
+                   '"click"', '"export"', '"beard"', '"remove_seed"',
                    'fetch("meta")', 'fetch("timeline")'):
         assert needle in HTML_PAGE, f"HTML_PAGE missing {needle}"
 
