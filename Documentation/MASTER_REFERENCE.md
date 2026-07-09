@@ -6,13 +6,14 @@
 > If this document and the code disagree, **the code wins** — and the discrepancy is a bug in this
 > document that must be fixed.
 >
-> **Last synced with code:** 2026-07-09 — production-path run on SubjectA complete
-> (`RESULTS_PRODUCTION.md`, signal replicated, 11-node attribution table); canonicalizer 80 ms
-> A/V desync **fixed** (§12.1, verified 0 ms); **ST-GAE implemented, evaluated, and FALSIFIED by
-> its own pre-registered Bar 4** (`STGAE_RESULTS.md`, `ST_GAE_DESIGN.md` §10) — reconstruction
-> tracks clip identity, not deception. **The marginal per-channel z-score attribution is the
-> shippable method** (0.68–0.70). Next: re-tune `WAVLM_LAYER_INDEX`; more annotated subjects
-> (N=1 is the ceiling on every claim).
+> **Last synced with code:** 2026-07-10 — graph-line v2 built: **predictive cross-modal
+> coupling model** (`stgae/coupling_*.py`, masked-node prediction — "can the other 10 nodes
+> predict this one?"), designed + pre-registered in `Documentation/COUPLING_MODEL_DESIGN.md`,
+> synthetic capability suite green (21/21, incl. a simulated v1 domain-gap failure that does
+> NOT recur); **real-data 4-bar evaluation pending on the desktop** (`coupling_evaluate.py`).
+> Context: reconstruction ST-GAE v1 was FALSIFIED 2026-07-09 by its own Bar 4
+> (`STGAE_RESULTS.md`) — **the marginal per-channel z-score attribution remains the shippable
+> method** (0.68–0.70) unless/until v2 passes its bars. N=1 is still the ceiling on every claim.
 
 ---
 
@@ -424,6 +425,7 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 | `verify_wavlm_truncation.py` | StableLayerNorm encoder-truncation correctness (tiny synthetic model, no GPU) | ✅ 9/9 |
 | `verify_acoustic_gating.py` | window-level acoustic block gated by `is_audio_active` | ✅ 4/4 |
 | `verify_stgae.py` | ST-GAE graph_spec / masking / feature-count-norm loss / zero-grad masking / determinism / noise-failure (CPU torch) | ✅ 16/16 |
+| `verify_coupling.py` | coupling model (v2): mask isolation (bitwise), vectorized≡sequential 11-target pass, ÷F_n target loss, target-validity zero-grad, planted-coupling recovery + break-spike specificity + domain-shift robustness (simulated v1 failure), noise→degenerate gate (CPU torch) | ✅ 21/21 (2026-07-10) |
 
 ## 14. Roadmap (future, in intended order — nothing scheduled)
 
@@ -434,10 +436,13 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
    the shippable method** (within-06 AUCs 0.68–0.70, direction-aware).
 2. **Remaining validation debt:** re-tune `WAVLM_LAYER_INDEX` empirically; the one-time WavLM
    `use_amp`/`truncate_encoder` fp32 A/B (§12.4).
-3. **Graph attribution v2 (if revisited):** swap reconstruction for a **predictive/contrastive**
-   objective (predict a channel from cross-modal neighbours; flag broken couplings), or
-   **per-feature** (not node-aggregated) residuals, or a **supervised** head — the reconstruction
-   framing is falsified (§10). The tested `stgae/` package is the reusable substrate.
+3. **Graph attribution v2 — predictive coupling model: BUILT 2026-07-10, evaluation pending.**
+   Masked-node prediction (predict each channel from its cross-modal neighbours; flag broken
+   couplings) + per-feature residuals + within-clip scoring — both v1 failure modes addressed
+   by construction. Design + pre-registered bars: `Documentation/COUPLING_MODEL_DESIGN.md`;
+   code `stgae/coupling_{model,fit,attribute}.py`; tests 21/21. **Next desktop session: run
+   `validation/gt_subjectA/coupling_evaluate.py`** → pass all bars = complement channel set to
+   the marginal table; fail Bar 1 or 4 = graph line closed for the n=1 era.
 4. **VideoMAE v2** (deferred, no re-entry): its criterion presumed a *working* ST-GAE, which the
    2026-07-09 evaluation did not yield.
 5. **Supervised training path** (distant): needs N>1 annotated subjects; the ELAN corpus +
@@ -451,6 +456,8 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 |---|---|
 | **`Documentation/MASTER_REFERENCE.md`** (this) | Living master — always current; updated with every change |
 | `Documentation/PIPELINE_ARCHITECTURE.md` | The block diagram (Mermaid) — visual companion, kept in sync |
+| `Documentation/ST_GAE_DESIGN.md` | **Frozen** — v1 graph design + §10 falsification record |
+| `Documentation/COUPLING_MODEL_DESIGN.md` | Graph-line v2 design + pre-registered bars (§9 outcome pending) |
 | `audio_diarization/SPOVNOB_MASTER_REFERENCE.md` | Deep authority for the audio side |
 | `deception_detection/RECORDING_TIMELINE_AND_ACOUSTIC_UPGRADE_PLAN.md` | **Historical** — completed plan (Phases A+B, done 2026-07-02) |
 | `deception_detection/MERGE_INTEGRATION_PLAN.md` | **Historical** — merge plan; known-stale vs code even before completion |
@@ -729,3 +736,36 @@ line. Completed plan docs are frozen as history, never edited retroactively.
     (0.68–0.70). VideoMAE stays deferred (no working ST-GAE to feed it). The pre-registered bars
     did their job — prevented shipping a plausible-but-broken model. `stgae/` retained as the
     substrate for a future predictive/contrastive/supervised v2.
+- **2026-07-10** — **Graph-line v2: predictive cross-modal coupling model built (laptop);
+  real-data evaluation pending on the desktop.**
+  - **Design pre-registered first** (`Documentation/COUPLING_MODEL_DESIGN.md`): the objective
+    changes from *"can I reconstruct this window?"* (v1, falsified) to per-node masked
+    prediction — *"hide this node entirely; can the other 10 predict it?"* Residual = "this
+    channel stopped moving the way the subject's other channels say it should" (a decoupling
+    detector, aimed at the validated freeze+leakage signature). Both v1 failure modes addressed
+    by construction: conditional couplings transfer across the baseline↔interview domain gap
+    far better than marginals + pooled scoring is within-clip; residuals stay per-feature.
+    Bars 1–4 mirror ST_GAE_DESIGN §6; new Bar 0 = synthetic capability gate + fit ratio < 0.90.
+  - **Code** (`stgae/coupling_model.py`, `coupling_fit.py`, `coupling_attribute.py`; graph_spec/
+    dataset reused unchanged, v1 modules untouched as the record): learned per-node **mask token
+    replaces the target's encoder stream** — the forward output is invariant to the target's
+    input bit-for-bit at any depth (the only leak-safe construction under message passing);
+    no bottleneck (nothing to copy), ~12 k params; loss = ÷F_n target-node error with
+    zero-valid-target frames carrying zero weight. Degenerate gate's reference (predict-zero)
+    now reads directly as "do this subject's channels carry information about each other?".
+  - **RTX 6000 Ada profile** (design §7): whole baseline tensor set resident in VRAM (zero
+    per-step transfer), the 11-target pass folded into the batch dim (one forward, not 11 —
+    equivalence unit-tested), TF32 on; fp16 AMP deliberately omitted (launch-overhead-bound).
+    Same code path runs CPU for the test suite.
+  - **Tests `tests/verify_coupling.py` — 21/21 green (laptop, CPU)**: mask isolation (bitwise),
+    vectorized≡sequential, ÷F_n equality, target-validity zero-grad; capability: a planted
+    cross-node coupling is learned (ratio 0.344, driven node 0.16 vs independent node 1.00),
+    **breaking it spikes exactly the broken node** (coupling-z median 88 vs quiet −0.1), a
+    **marginal scale-shift with couplings intact stays 12× below the break** (7.5 vs 88 — the
+    simulated v1 domain-gap failure does not recur), pure noise fires the degenerate gate
+    (ratio 1.002).
+  - **Evaluator ready** (`validation/gt_subjectA/coupling_evaluate.py`): fit on synced baseline,
+    ELAN scoring-only overlay, per-node + per-feature AUCs (pooled on within-clip percentiles),
+    bar-by-bar verdict printout. **Not yet run** — needs the desktop's
+    `pipeline_system_outputs/REC_SUBJECTA_SYNCED_*`. Decision rule pre-registered: pass all →
+    complement channel set to the marginal table; fail Bar 1 or 4 → graph line closed for n=1.
