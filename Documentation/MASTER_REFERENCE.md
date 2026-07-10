@@ -16,7 +16,10 @@
 > method** (0.68–0.70) unless/until v2 passes its bars. N=1 is still the ceiling on every claim
 > — **new annotated subjects (same experiment) arriving ~2026-07-11** (§14.5). Also new:
 > **analyst report generator** (`report/`, §9) — per-recording self-contained HTML is now the
-> analyst-facing end deliverable (tests 22/22; e2e re-verified 375/375).
+> analyst-facing end deliverable (tests 22/22; e2e re-verified 375/375); and the
+> **multi-subject replication toolchain** (`multisubject/`, tests 19/19) — intake validator +
+> pre-registered replication scorecard, ready for tomorrow's corpus. **Desktop runbook for the
+> new subjects: `Documentation/MULTISUBJECT_REPLICATION_PLAN.md`.**
 
 ---
 
@@ -89,6 +92,12 @@ Deception_Detection/
 │   ├── mediapipe_pose/           ← ParallelMediaPipePool (12 workers)
 │   ├── OpenFace-3.0/ + openface_pipeline/  ← AU + gaze extraction
 │   ├── Yolo_v8/                  ← PersonDetector + FaceLock (TensorRT)
+│   ├── stgae/                    ← graph line: v1 recon ST-GAE (falsified) + v2 coupling_*.py
+│   │                                (predictive cross-modal coupling — COUPLING_MODEL_DESIGN.md)
+│   ├── report/                   ← analyst report generator (self-contained HTML end deliverable;
+│   │                                analyst_report.py assembly + render_html.py; §9, Pass 5)
+│   ├── multisubject/             ← intake_validator.py + replication_scorecard.py (N>1 corpus;
+│   │                                MULTISUBJECT_REPLICATION_PLAN.md is the desktop runbook)
 │   ├── dashboard/ + frontend/    ← diagnostic dashboard / browser UI
 │   ├── tests/                    ← verify_*.py self-test suite (§10)
 │   ├── validation/gt_subjectA/   ← ground-truth validation: scorer/attribution/robustness
@@ -431,6 +440,7 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 | `verify_stgae.py` | ST-GAE graph_spec / masking / feature-count-norm loss / zero-grad masking / determinism / noise-failure (CPU torch) | ✅ 16/16 |
 | `verify_coupling.py` | coupling model (v2): mask isolation (bitwise), vectorized≡sequential 11-target pass, ÷F_n target loss, target-validity zero-grad, planted-coupling recovery + break-spike specificity + domain-shift robustness (simulated v1 failure), noise→degenerate gate (CPU torch) | ✅ 21/21 (2026-07-10) |
 | `verify_report.py` | analyst report: assembly integrity (p95 flag rule, 11-group node table), dead/uncalibratable channel surfacing, degenerate-baseline alert, coupling-lane conditionality (healthy/degenerate/absent), ELAN strictly validation-mode, self-contained HTML (no external URLs, no NaN in JSON) | ✅ 22/22 (2026-07-10) |
+| `verify_multisubject.py` | intake validator (baseline/eaf/duplicate/stream failure classes, WARN vs FAIL, verdict JSON) + replication scorecard (REPLICATES / SUBJECT-SPECIFIC / DIRECTION-ONLY / NO-SIGNAL / INSUFFICIENT-DATA on a planted 3-subject world; noise-sign pigeonhole guarded; adequacy floor) | ✅ 19/19 (2026-07-10) |
 
 ## 14. Roadmap (future, in intended order — nothing scheduled)
 
@@ -459,6 +469,11 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
    cascade + calibration per subject, replicate the SubjectA channel AUCs (does AU12 tremor /
    hand↔face generalize, or is it a SubjectA quirk?), re-run the coupling 4-bar evaluation
    per subject, and only then consider the supervised head.
+   **TOOLING READY (2026-07-10):** `multisubject/intake_validator.py` (gate each package before
+   GPU time) + `multisubject/replication_scorecard.py` (pre-registered REPLICATES/SUBJECT-SPECIFIC
+   verdicts). **Full desktop runbook + pre-registered criteria + N>1 future-work specs
+   (supervised head §6.1, per-subject coupling §6.2, baseline-duration study §6.3):
+   `Documentation/MULTISUBJECT_REPLICATION_PLAN.md`.**
 6. **Production deployment target**: resolve dev-box vs nv05 (SPOVNOB pin incompatibility).
 
 ## 15. Document governance
@@ -469,6 +484,7 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 | `Documentation/PIPELINE_ARCHITECTURE.md` | The block diagram (Mermaid) — visual companion, kept in sync |
 | `Documentation/ST_GAE_DESIGN.md` | **Frozen** — v1 graph design + §10 falsification record |
 | `Documentation/COUPLING_MODEL_DESIGN.md` | Graph-line v2 design + pre-registered bars (§9 outcome pending) |
+| `Documentation/MULTISUBJECT_REPLICATION_PLAN.md` | Multi-subject runbook + pre-registered replication criteria + N>1 future-work specs — **the desktop handoff for the new corpus** |
 | `audio_diarization/SPOVNOB_MASTER_REFERENCE.md` | Deep authority for the audio side |
 | `deception_detection/RECORDING_TIMELINE_AND_ACOUSTIC_UPGRADE_PLAN.md` | **Historical** — completed plan (Phases A+B, done 2026-07-02) |
 | `deception_detection/MERGE_INTEGRATION_PLAN.md` | **Historical** — merge plan; known-stale vs code even before completion |
@@ -802,3 +818,30 @@ line. Completed plan docs are frozen as history, never edited retroactively.
     `verify_end_to_end_pipeline.py` re-run after the Pass-5 hook: **375/375**.
   - Roadmap note added (§14.5): **more annotated subjects from the same experiment exist**
     (same questions/structure; no further SubjectA sessions) — videos to be shared ~2026-07-11.
+- **2026-07-10** — **Multi-subject replication toolchain (`deception_detection/multisubject/`) +
+  desktop handoff doc — built ahead of the N>1 corpus.** The N=1 ceiling is about to lift; this
+  is the machinery to answer "does SubjectA's per-channel signal replicate?" *honestly*.
+  - `intake_validator.py`: gate a subject package (videos + ELAN) BEFORE any GPU time. PASS/WARN/
+    FAIL checklist (missing/ambiguous baseline, missing/corrupt/orphan .eaf, duplicate clip index,
+    label vocabulary, thin annotation, and — with ffprobe — A+V stream presence and baseline
+    duration), writes `intake_validation.json`, non-zero exit on FAIL. FAIL = cascade would
+    break; WARN = processable-but-imperfect (an unannotated subject is a WARN — processable,
+    yields no AUC). Clip convention documented: C001=baseline (file_index 0), C00n↔file_index n-1.
+  - `replication_scorecard.py`: consumes each subject's `*_recording_calibrated.csv` + ELAN dir,
+    scores every channel per subject (|z| AUC, Lie vs Truth, pure windows, ELAN scoring-only),
+    emits channel×subject `replication_scorecard.csv` with per-channel verdicts. **Criteria
+    PRE-REGISTERED 2026-07-10 before any non-SubjectA data was seen:** adequacy ≥30 pure Lie &
+    ≥30 pure Truth per subject; R1 magnitude (AUC≥0.60 in ≥2/3 adequate); R2 direction (median
+    shift ≥0.25 to express a sign — guards the 3-subject noise-sign pigeonhole — all expressed
+    signs agree); verdicts REPLICATES / DIRECTION-ONLY / SUBJECT-SPECIFIC / NO-SIGNAL /
+    INSUFFICIENT-DATA. SubjectA's validated channels reported first.
+  - Tests `tests/verify_multisubject.py` **19/19** (planted 3-subject world exercising every
+    verdict incl. the noise-sign trap; every intake failure class). Note: with 94 windows/class a
+    noise AUC crosses 0.60 for ~1 seed in 6 — the scorecard correctly called that seed
+    SUBJECT-SPECIFIC (honest), so the fixture pins a clean seed and asserts the no-signal property.
+  - **Desktop handoff: `Documentation/MULTISUBJECT_REPLICATION_PLAN.md`** — the runbook for the
+    Claude Code session that processes the new subjects (validate → cascade → report sanity-check
+    → scorecard → record), the pre-registered criteria, verdict-interpretation guide, and the
+    N>1 future-work specs: **§6.1 supervised attribution head** (GBT/logreg over per-channel z,
+    strict leave-one-subject-out, informs channel weighting NOT a production verdict — legitimate
+    only at N>1), **§6.2 per-subject coupling evaluation**, **§6.3 baseline-duration study**.
