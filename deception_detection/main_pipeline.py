@@ -762,11 +762,27 @@ class MultimodalProductionOrchestrator:
               f"{len(assembly_inputs)}/{len(processed)} clip(s) assembled, "
               f"baseline={stats.baseline_window_count} windows (file_index "
               f"{baseline_file_index}).")
+
+        # ── Pass 5: analyst report (self-contained HTML; non-fatal) ────
+        # The report is a read-only view over the artifacts written above —
+        # a rendering failure must never fail the recording itself.
+        report_html = None
+        try:
+            from report.analyst_report import generate_report
+            report_html = generate_report(str(recording_dir),
+                                          recording_id=recording_id,
+                                          clips_parent=str(self.output_root))
+            print(f"📋 Analyst report: {report_html}")
+        except Exception as e:
+            print(f"⚠️ Analyst report generation failed (recording outputs "
+                  f"unaffected): {e}")
+
         return {
             "recording_id": recording_id,
             "baseline_file_index": baseline_file_index,
             "baseline_stats_json": str(stats_path),
             "recording_calibrated_csv": str(recording_csv),
+            "analyst_report_html": report_html,
             "clips": [
                 {k: str(v) if isinstance(v, Path) else v for k, v in rec.items()}
                 for rec in processed
