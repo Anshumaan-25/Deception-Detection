@@ -141,6 +141,13 @@ def build_report_data(recording_dir, *, recording_id=None, elan_dir=None,
 
     if "file_index" not in df.columns:
         df["file_index"] = 0
+    # The baseline clip is NOT necessarily file_index 0 (process_recording_session
+    # accepts baseline_file_index != 0). Recover the true index from the fitted
+    # stats' source_csv; fall back to the lowest present index.
+    from analytics.baseline_calibrator import parse_baseline_file_index
+    default_bidx = int(df["file_index"].min())
+    baseline_idx = (parse_baseline_file_index(baseline["source_csv"], default_bidx)
+                    if baseline else default_bidx)
     if "deviation_percentile" not in df.columns:
         df["deviation_percentile"] = df["deviation_magnitude"].rank(pct=True, na_option="keep")
 
@@ -159,10 +166,10 @@ def build_report_data(recording_dir, *, recording_id=None, elan_dir=None,
     dead = sorted(c for c, v in coverage.items() if v == 0.0)
     low = sorted((c for c, v in coverage.items() if 0.0 < v < 0.5))
 
-    # baseline sanity: the baseline clip (file_index 0) should sit at z≈0/1 and
-    # median deviation_magnitude ≈ sqrt(#features) (the rec_ca lesson: ~0 is the
+    # baseline sanity: the baseline clip should sit at z≈0/1 and median
+    # deviation_magnitude ≈ sqrt(#features) (the rec_ca lesson: ~0 is the
     # DEGENERATE signature, not health)
-    b = df[df.file_index == 0]
+    b = df[df.file_index == baseline_idx]
     expected_dev = float(np.sqrt(len(feats)))
     baseline_sanity = None
     if len(b):
@@ -192,7 +199,7 @@ def build_report_data(recording_dir, *, recording_id=None, elan_dir=None,
             })
         entry = {
             "file_index": int(fidx),
-            "is_baseline": int(fidx) == 0,
+            "is_baseline": int(fidx) == baseline_idx,
             "n_windows": int(len(cdf)),
             "t": _nan_to_none(t),
             "pct": _nan_to_none(pct),
@@ -247,6 +254,7 @@ def build_report_data(recording_dir, *, recording_id=None, elan_dir=None,
             "n_features": len(feats),
             "flag_percentile": FLAG_PERCENTILE,
             "baseline": {
+                "file_index": baseline_idx,
                 "window_count": baseline["baseline_window_count"] if baseline else None,
                 "source_csv": os.path.basename(baseline["source_csv"]) if baseline else None,
                 "uncalibratable": uncalibratable,

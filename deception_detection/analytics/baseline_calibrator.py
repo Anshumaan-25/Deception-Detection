@@ -1,10 +1,22 @@
 import json
+import re
 import pandas as pd
 import numpy as np
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict
 import logging
+
+
+def parse_baseline_file_index(source_csv, default: int = 0) -> int:
+    """Recover the baseline clip's diarization file_index from a baseline_stats
+    ``source_csv`` whose basename is ``<recording_id>_<NNN>_windowed_features.csv``
+    (session_id = f"{recording_id}_{file_index:03d}"). Returns ``default`` if the
+    suffix cannot be parsed. Downstream consumers (analyst report, replication
+    scorecard) must NOT assume the baseline is file_index 0 — process_recording_session
+    accepts ``baseline_file_index`` != 0 for mis-named batches."""
+    m = re.search(r"_(\d{3})_windowed_features\.csv$", str(source_csv))
+    return int(m.group(1)) if m else default
 
 
 # Columns that are never behavioral features: window bookkeeping, context labels,

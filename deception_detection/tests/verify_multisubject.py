@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from multisubject.intake_validator import validate_package
 from multisubject.replication_scorecard import build_scorecard, main as scorecard_main
+from multisubject.run_replication import run as run_driver
 
 ok = 0
 def check(cond, msg):
@@ -108,9 +109,13 @@ CHANNELS = ["AU12_velocity_max",   # replicates: strong in all 3, direction +
             "wavlm_latent_0",      # pure noise
             "ear_mean"]            # all-NaN → insufficient
 
-def make_subject(root, name, quirk=False, rng=None):
+def make_subject(root, name, quirk=False, rng=None, baseline_src_idx=None):
     d = os.path.join(root, name); os.makedirs(d, exist_ok=True)
     elan = os.path.join(d, "elan"); os.makedirs(elan, exist_ok=True)
+    if baseline_src_idx is not None:
+        json.dump({"feature_means": {}, "feature_stds": {}, "baseline_window_count": 1,
+                   "source_csv": f"/store/REC_{name}_{baseline_src_idx:03d}_windowed_features.csv"},
+                  open(os.path.join(d, f"REC_{name}_baseline_stats.json"), "w"))
     rows = []
     for fidx in range(3):                       # 0 = baseline, 1..2 interviews
         for w in range(100):
@@ -165,5 +170,39 @@ with tempfile.TemporaryDirectory() as tmp:
     out = pd.read_csv(csv_path)
     check({"auc_S1", "auc_S2", "auc_S3"} <= set(out.columns),
           "CSV carries one AUC column per subject")
+
+print("3. scorecard recovers a NON-ZERO baseline index (never assumes 0)")
+with tempfile.TemporaryDirectory() as tmp:
+    from multisubject.replication_scorecard import load_labeled_windows
+    rng = np.random.default_rng(1)
+    # baseline declared as clip index 1 (which DOES carry an eaf) → its labeled
+    # windows must be excluded despite having labels
+    s = make_subject(tmp, "SB", rng=rng, baseline_src_idx=1)
+    pure = load_labeled_windows(s["recording_dir"], s["elan_dir"])
+    check(not pure.empty and (pure.file_index == 1).sum() == 0,
+          "windows from the declared baseline clip (index 1) are not scored")
+    check((pure.file_index == 2).sum() > 0, "the true interview clip (index 2) is scored")
+
+print("4. run_replication driver (intake → [manual cascade] → scorecard)")
+with tempfile.TemporaryDirectory() as tmp:
+    rng = np.random.default_rng(2)
+    subs = [make_subject(tmp, "D1", quirk=True, rng=rng),
+            make_subject(tmp, "D2", rng=rng)]
+    # add package_dir (a well-formed intake package) to each
+    for sub in subs:
+        pkg = make_package(tmp, sub["name"] + "_pkg")
+        sub["package_dir"] = pkg
+    manifest = {"subjects": subs}
+    mpath = os.path.join(tmp, "drive.json"); json.dump(manifest, open(mpath, "w"))
+    rc = run_driver(mpath, media_probe=False)
+    check(rc == 0, "driver returns 0 when packages pass intake and recordings are ready")
+    check(os.path.exists(os.path.join(tmp, "replication_scorecard.csv")),
+          "driver produced the scorecard in the second (post-cascade) state")
+    # a FAILing package (missing baseline) blocks scoring, non-zero exit
+    bad = make_subject(tmp, "D3", rng=rng)
+    bad["package_dir"] = make_package(tmp, "D3_pkg", videos=("C002", "C003"))  # no baseline
+    manifest["subjects"].append(bad); json.dump(manifest, open(mpath, "w"))
+    check(run_driver(mpath, media_probe=False) == 1,
+          "driver returns non-zero and withholds scoring when any package FAILs intake")
 
 print(f"\nverify_multisubject: {ok} checks passed — no GPU, no real footage.")

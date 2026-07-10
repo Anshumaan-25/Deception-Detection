@@ -79,7 +79,8 @@ def make_fixture(root, rid="REC_TEST", degenerate_baseline=False,
     stats = {"feature_means": {c: 0.0 for c in FEATS},
              "feature_stds": {c: (None if c == "silent_speech_duration_ms" else 1.0)
                               for c in FEATS},
-             "baseline_window_count": 60, "source_csv": f"{rid}_000_windowed.csv"}
+             "baseline_window_count": 60,
+             "source_csv": f"/store/{rid}_000_windowed_features.csv"}
     with open(os.path.join(rec, f"{rid}_baseline_stats.json"), "w") as f:
         json.dump(stats, f)
 
@@ -134,6 +135,34 @@ with tempfile.TemporaryDirectory() as tmp:
           "healthy coupling fit → lane rendered")
     check("VALIDATION MODE" not in html and "annotated Truth" not in html,
           "no ground-truth overlay by default (production mode)")
+
+print("2b. baseline is NOT assumed to be file_index 0 (recovered from stats source_csv)")
+with tempfile.TemporaryDirectory() as tmp:
+    rid = "REC_OFFSET"; rec = os.path.join(tmp, rid); os.makedirs(rec)
+    rng = np.random.default_rng(1); rows = []
+    for fidx in (1, 2, 3):                       # NOTE: no file_index 0 at all
+        for w in range(40):
+            r = {"window_id": w, "start_time_ms": w*1000.0, "end_time_ms": w*1000.0+2000,
+                 "frame_count": 60, "cumulative_confidence": 0.85,
+                 "file_index": fidx, "clip_window_id": w}
+            for c in FEATS:
+                r[c] = np.nan if c in ("ear_mean", "silent_speech_duration_ms") else rng.normal()
+            rows.append(r)
+    df = pd.DataFrame(rows)
+    zz = df[FEATS].to_numpy(dtype=float)
+    df["deviation_magnitude"] = np.sqrt(np.nansum(zz**2, axis=1))
+    df["deviation_percentile"] = df["deviation_magnitude"].rank(pct=True, na_option="keep")
+    df.to_csv(os.path.join(rec, f"{rid}_recording_calibrated.csv"), index=False)
+    json.dump({"feature_means": {c: 0.0 for c in FEATS},
+               "feature_stds": {c: 1.0 for c in FEATS}, "baseline_window_count": 40,
+               "source_csv": f"/store/{rid}_002_windowed_features.csv"},   # baseline = idx 2
+              open(os.path.join(rec, f"{rid}_baseline_stats.json"), "w"))
+    data = build_report_data(rec)
+    check(data["meta"]["baseline"]["file_index"] == 2,
+          "baseline index recovered as 2 from stats source_csv, not defaulted to 0/1")
+    bmap = {c["file_index"]: c["is_baseline"] for c in data["clips"]}
+    check(bmap[2] and not bmap[1] and not bmap[3],
+          "clip 2 flagged as baseline; clips 1 & 3 as interviews")
 
 print("3. degenerate baseline fires the loud alert")
 with tempfile.TemporaryDirectory() as tmp:

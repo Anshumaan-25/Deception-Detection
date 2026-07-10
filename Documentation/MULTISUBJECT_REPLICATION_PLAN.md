@@ -96,7 +96,22 @@ The scorecard reports SubjectA's validated `TRACKED_CHANNELS` first — "does *t
 replicate?" is the whole point. It also scores every other channel, so a signal that is
 *stronger* across subjects than it was in SubjectA can surface.
 
-### 2.3 Tests — `tests/verify_multisubject.py` (19 checks, CPU, synthetic)
+### 2.3 `run_replication.py` — the one-command driver + `replication_manifest.template.json`
+
+Chains intake → (manual GPU cascade) → scorecard around one manifest (§4). Run it before the
+cascade to validate, and again after to score. The template manifest has SubjectA pre-filled.
+
+### 2.4 Baseline-index robustness (do not re-introduce the "index 0" assumption)
+
+The analyst report and the scorecard both **recover the baseline clip's `file_index` from
+`<rid>_baseline_stats.json`** (`analytics.baseline_calibrator.parse_baseline_file_index`, which
+parses the `_NNN_windowed_features.csv` suffix), rather than assuming 0. This matters because
+`process_recording_session(baseline_file_index=…)` allows a non-zero baseline for mis-named
+batches; a hardcoded 0 would mislabel the baseline, run the health check on the wrong clip, and
+score the real baseline as an interview. Any future consumer of recording outputs must do the
+same recovery.
+
+### 2.5 Tests — `tests/verify_multisubject.py` (24 checks) + `verify_report.py` (24), CPU, synthetic
 
 Intake: well-formed → PASS; each failure class fires its check (missing baseline, missing/corrupt
 `.eaf`, duplicate index, too-few videos); label/annotation issues WARN; unannotated subject
@@ -121,18 +136,37 @@ exclusion verified.
 Prerequisite: `git pull` on the desktop so these commits are present. Work from
 `deception_detection/`, conda env `spovnob_env`.
 
-1. **Validate every package first** (cheap, no GPU):
-   `python -m multisubject.intake_validator <path/to/SubjectB_session>`
-   Fix every FAIL before proceeding. Re-run until PASS/WARN.
+**The one-command driver.** `multisubject/run_replication.py` chains intake → (manual GPU
+cascade) → scorecard around a single manifest. Fill in
+`multisubject/replication_manifest.template.json` (SubjectA is pre-filled; copy its block per new
+subject, set the four paths). Then run the driver **twice** — before and after the cascade:
+
+```
+python -m multisubject.run_replication multisubject/replication_manifest.template.json
+```
+- **First run (before cascade):** validates every package (`package_dir`), prints the PASS/WARN/
+  FAIL summary, and reports which subjects still need the GPU cascade (their `recording_dir` has
+  no `*_recording_calibrated.csv`). Non-zero exit if any package FAILs — fix before proceeding.
+- **Second run (after cascade):** finds every `recording_dir` populated and runs the scorecard
+  automatically. Needs ≥2 scoreable subjects.
+
+Between the two runs, do the GPU step manually. Long form of the whole sequence:
+
+1. **Validate every package first** (cheap, no GPU) — the driver's first run, or standalone:
+   `python -m multisubject.intake_validator <path/to/SubjectB_session>`.
+   Fix every FAIL before proceeding.
 2. **Run the cascade per subject** exactly as SubjectA was run (canonicalize → SPOVNOB Stage-1
    → Stage-2 per-clip cascade → recording-level fit/apply/assemble). The recording-level step
    now also emits `<rid>_analyst_report.html` (Pass 5). Reuse `validation/gt_subjectA/recA_*.py`
-   as the template — they encode the exact invocation.
+   as the template — they encode the exact invocation. **Baseline index:** the tooling does NOT
+   assume the baseline is `file_index 0` — it recovers the true index from
+   `<rid>_baseline_stats.json`. If a subject's baseline clip is not C001, pass the right
+   `baseline_file_index` to `process_recording_session` and everything downstream follows.
 3. **Sanity-check each subject's report** — open `<rid>_analyst_report.html`. If the
    data-quality panel shows a DEGENERATE baseline or many dead channels, stop and fix that
    subject before scoring; a broken calibration poisons its AUCs.
-4. **Build the scorecard manifest** (§2.2) listing SubjectA + each new subject, then:
-   `python -m multisubject.replication_scorecard manifest.json`
+4. **Score:** the driver's second run, or standalone
+   `python -m multisubject.replication_scorecard manifest.json`.
 5. **Record the outcome** — write a short `validation/multisubject/RESULTS.md` (headline: which
    TRACKED channels REPLICATE, which are SUBJECT-SPECIFIC, any new cross-subject signal), add a
    MASTER_REFERENCE changelog line, and update §14. Attach `replication_scorecard.csv`.

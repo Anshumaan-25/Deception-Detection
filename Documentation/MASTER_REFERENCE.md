@@ -439,8 +439,8 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 | `verify_acoustic_gating.py` | window-level acoustic block gated by `is_audio_active` | ✅ 4/4 |
 | `verify_stgae.py` | ST-GAE graph_spec / masking / feature-count-norm loss / zero-grad masking / determinism / noise-failure (CPU torch) | ✅ 16/16 |
 | `verify_coupling.py` | coupling model (v2): mask isolation (bitwise), vectorized≡sequential 11-target pass, ÷F_n target loss, target-validity zero-grad, planted-coupling recovery + break-spike specificity + domain-shift robustness (simulated v1 failure), noise→degenerate gate (CPU torch) | ✅ 21/21 (2026-07-10) |
-| `verify_report.py` | analyst report: assembly integrity (p95 flag rule, 11-group node table), dead/uncalibratable channel surfacing, degenerate-baseline alert, coupling-lane conditionality (healthy/degenerate/absent), ELAN strictly validation-mode, self-contained HTML (no external URLs, no NaN in JSON) | ✅ 22/22 (2026-07-10) |
-| `verify_multisubject.py` | intake validator (baseline/eaf/duplicate/stream failure classes, WARN vs FAIL, verdict JSON) + replication scorecard (REPLICATES / SUBJECT-SPECIFIC / DIRECTION-ONLY / NO-SIGNAL / INSUFFICIENT-DATA on a planted 3-subject world; noise-sign pigeonhole guarded; adequacy floor) | ✅ 19/19 (2026-07-10) |
+| `verify_report.py` | analyst report: assembly integrity (p95 flag rule, 11-group node table), dead/uncalibratable channel surfacing, degenerate-baseline alert, **baseline index recovered from stats (not assumed 0)**, coupling-lane conditionality, ELAN strictly validation-mode, self-contained HTML (no external URLs, no NaN in JSON) | ✅ 24/24 (2026-07-10) |
+| `verify_multisubject.py` | intake validator (failure classes, WARN vs FAIL, verdict JSON) + replication scorecard (5 verdict classes on a planted 3-subject world; noise-sign pigeonhole guarded; adequacy floor; **non-zero baseline recovery**) + **run_replication driver** (intake→score chaining, FAIL gates scoring) | ✅ 24/24 (2026-07-10) |
 
 ## 14. Roadmap (future, in intended order — nothing scheduled)
 
@@ -845,3 +845,26 @@ line. Completed plan docs are frozen as history, never edited retroactively.
     N>1 future-work specs: **§6.1 supervised attribution head** (GBT/logreg over per-channel z,
     strict leave-one-subject-out, informs channel weighting NOT a production verdict — legitimate
     only at N>1), **§6.2 per-subject coupling evaluation**, **§6.3 baseline-duration study**.
+- **2026-07-10** — **Pre-flight hardening for the N>1 desktop session (de-risk real data).**
+  Cross-checked this session's new code against the REAL SubjectA schema/file conventions and
+  fixed the one genuine gap plus added a turnkey driver:
+  - **Baseline is no longer assumed to be `file_index 0`.** Both the analyst report and the
+    replication scorecard now recover the baseline clip index from `<rid>_baseline_stats.json`
+    via new `analytics.baseline_calibrator.parse_baseline_file_index` (parses the
+    `_NNN_windowed_features.csv` suffix). `process_recording_session` allows `baseline_file_index`
+    != 0 for mis-named batches; the old hardcode would have mislabeled the baseline, run the
+    health check on the wrong clip, and scored the true baseline as an interview. Report gains a
+    baseline-index field; scorecard skips the recovered index.
+  - Verified the report's `TRACE_CHANNELS` + `NODE_GROUPS` prefixes against the canonical column
+    sources (`dynamic_window_engine`, `confidence_math.FFT_COLUMN_NAMES`,
+    `acoustic_extractor.ACOUSTIC_COLUMN_NAMES`) — all names resolve; AU12/AU1_ and
+    motion_energy/macro_motion prefix collisions checked clear.
+  - **`multisubject/run_replication.py`** — one-command driver chaining intake → (manual GPU
+    cascade) → scorecard around a single manifest; run before the cascade to validate, again
+    after to score; FAIL gates scoring (non-zero exit). **`replication_manifest.template.json`**
+    pre-filled with SubjectA's paths + a copy-me subject block.
+  - Tests: `verify_report.py` 22→**24** (non-zero baseline recovery), `verify_multisubject.py`
+    19→**24** (non-zero baseline in scorecard + driver end-to-end + FAIL-gates-scoring).
+    Regression-checked: `verify_recording_calibration` green, `verify_end_to_end_pipeline`
+    375/375 (Pass-5 report hook), coupling 21 / stgae 16 unaffected. Runbook (§4) + plan doc
+    (§2.3–2.5) updated with the driver and the baseline-index rule.

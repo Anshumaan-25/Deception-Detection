@@ -1,0 +1,18 @@
+{
+  "_README": "Desktop replication manifest. SubjectA is pre-filled with its known paths (edit if your desktop layout differs). For each NEW subject arriving 2026-07-11, copy the SubjectA block, set name/package_dir/recording_dir/elan_dir, and drop the leading underscore keys. Then: python -m multisubject.run_replication multisubject/replication_manifest.template.json  (run once before the cascades to validate packages; again after to score). Convention: baseline = clip C001 (file_index 0); interview file_index f <-> clip C{f+1:03d}; eaf matched on the C### token.",
+  "subjects": [
+    {
+      "name": "SubjectA",
+      "package_dir": "my_videos/00SubjectA_session1",
+      "recording_dir": "pipeline_system_outputs/REC_SUBJECTA",
+      "elan_dir": "/home/user1/Documents/Deception_Detection/my_videos/00SubjectA_session1/annotated Videos anushree"
+    },
+    {
+      "_comment": "TEMPLATE — copy this block per new subject, fill the four fields, remove _comment.",
+      "name": "SubjectB",
+      "package_dir": "my_videos/SubjectB_session1",
+      "recording_dir": "pipeline_system_outputs/REC_SUBJECTB",
+      "elan_dir": "my_videos/SubjectB_session1/annotated"
+    }
+  ]
+}

@@ -55,7 +55,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from analytics.baseline_calibrator import NON_FEATURE_COLUMNS
+from analytics.baseline_calibrator import NON_FEATURE_COLUMNS, parse_baseline_file_index
 
 MIN_WINDOWS = 30          # pre-registered adequacy floor (per class, per subject)
 REPLICATE_AUC = 0.60      # pre-registered magnitude bar
@@ -102,9 +102,15 @@ def load_labeled_windows(recording_dir, elan_dir):
     if not hits:
         raise FileNotFoundError(f"no *_recording_calibrated.csv in {rec}")
     df = pd.read_csv(hits[0])
+    # recover the baseline clip index (NOT assumed 0) — it is never labeled/scored
+    stats_hits = sorted(rec.glob("*_baseline_stats.json"))
+    baseline_idx = int(df["file_index"].min())
+    if stats_hits:
+        src = json.loads(stats_hits[0].read_text()).get("source_csv", "")
+        baseline_idx = parse_baseline_file_index(src, baseline_idx)
     frames = []
     for fidx, cdf in df.groupby("file_index", sort=True):
-        if int(fidx) == 0:
+        if int(fidx) == baseline_idx:
             continue                                   # baseline: never labeled
         eafs = globmod.glob(str(Path(elan_dir) / f"*C{int(fidx)+1:03d}*.eaf"))
         if not eafs:
