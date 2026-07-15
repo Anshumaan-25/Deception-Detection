@@ -4,6 +4,14 @@
 > N>1 replication run. Read this top-to-bottom, then run the "WHAT TO DO ON RESUME" checklist.
 > Authority for everything else: `Documentation/MASTER_REFERENCE.md` (+ its changelog).
 
+> **⏹ WRAP-UP NOTE (2026-07-15 ~18:12): ALL PROCESSES STOPPED at user request.** SubjectC's
+> Stage-2 cascade was killed mid-run (2/6 clips complete — partial, incomplete output dirs remain).
+> Click UIs down, GPU idle. **ON RESUME, for SubjectC: re-run its cascade from scratch** (step 4c —
+> `cascade_generic.py` overwrites cleanly), then assemble. SubjectC's SPOVNOB Stage-1 IS done
+> (`session/rec_subjectc/pipeline_output.json`, 49 segs) — do NOT re-click or re-run Stage-1 for C.
+> SubjectD/E/F: all prepped + canonicalized; each still needs the operator CLICK → Stage-1 →
+> cascade → assemble (steps 4a-d). Then the N=6 scorecard (step 4e). Nothing is running.
+
 ## 1. The goal
 Test whether SubjectA's per-channel deception signal **replicates across subjects**. Corpus:
 SubjectA (session1), SubjectB (session2), and 4 new sessions SubjectC–F. Production path per subject:
