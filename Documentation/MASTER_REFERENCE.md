@@ -6,15 +6,19 @@
 > If this document and the code disagree, **the code wins** — and the discrepancy is a bug in this
 > document that must be fixed.
 >
-> **Last synced with code:** 2026-07-10 — graph-line v2 built: **predictive cross-modal
-> coupling model** (`stgae/coupling_*.py`, masked-node prediction — "can the other 10 nodes
-> predict this one?"), designed + pre-registered in `Documentation/COUPLING_MODEL_DESIGN.md`,
-> synthetic capability suite green (21/21, incl. a simulated v1 domain-gap failure that does
-> NOT recur); **real-data 4-bar evaluation pending on the desktop** (`coupling_evaluate.py`).
-> Context: reconstruction ST-GAE v1 was FALSIFIED 2026-07-09 by its own Bar 4
-> (`STGAE_RESULTS.md`) — **the marginal per-channel z-score attribution remains the shippable
-> method** (0.68–0.70) unless/until v2 passes its bars. N=1 is still the ceiling on every claim
-> — **new annotated subjects (same experiment) arriving ~2026-07-11** (§14.5). Also new:
+> **Last synced with code:** 2026-07-10 — graph-line v2 (**predictive cross-modal coupling
+> model**, `stgae/coupling_*.py`) was **evaluated on the desktop and FALSIFIED by Bar 4**
+> (`coupling_evaluate.py` on `REC_SUBJECTA_SYNCED_*`; write-up
+> `validation/gt_subjectA/COUPLING_RESULTS.md`, design outcome `COUPLING_MODEL_DESIGN.md §9`).
+> Result: Bar 0 (fit 0.801) and Bar 1 (0.754, a coupling feature that *beats* the marginal path)
+> PASS, but Bars 2/3 and the **go/no-go Bar 4 FAIL** (truth flag-rate 93% vs baseline 6% — the
+> aggregate coupling-z is still a distance-from-baseline meter). **This is the SECOND
+> pre-registered graph formulation killed by the same small-baseline brittleness** (v1
+> reconstruction `STGAE_RESULTS.md`, 2026-07-09; v2 coupling here) → the blocker is **N=1, not
+> the architecture**; the **graph line is closed for the n=1 era** (revisit only with N>1 + a
+> supervised head). **The marginal per-channel z-score attribution remains the shippable method**
+> (0.68–0.70). N=1 is the ceiling on every claim — **new annotated subjects (same experiment)
+> arriving ~2026-07-11** (§14.5) are now the critical unblock. Also new:
 > **analyst report generator** (`report/`, §9) — per-recording self-contained HTML is now the
 > analyst-facing end deliverable (tests 22/22; e2e re-verified 375/375); and the
 > **multi-subject replication toolchain** (`multisubject/`, tests 19/19) — intake validator +
@@ -440,7 +444,7 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 | `verify_stgae.py` | ST-GAE graph_spec / masking / feature-count-norm loss / zero-grad masking / determinism / noise-failure (CPU torch) | ✅ 16/16 |
 | `verify_coupling.py` | coupling model (v2): mask isolation (bitwise), vectorized≡sequential 11-target pass, ÷F_n target loss, target-validity zero-grad, planted-coupling recovery + break-spike specificity + domain-shift robustness (simulated v1 failure), noise→degenerate gate (CPU torch) | ✅ 21/21 (2026-07-10) |
 | `verify_report.py` | analyst report: assembly integrity (p95 flag rule, 11-group node table), dead/uncalibratable channel surfacing, degenerate-baseline alert, **baseline index recovered from stats (not assumed 0)**, coupling-lane conditionality, ELAN strictly validation-mode, self-contained HTML (no external URLs, no NaN in JSON) | ✅ 24/24 (2026-07-10) |
-| `verify_multisubject.py` | intake validator (failure classes, WARN vs FAIL, verdict JSON) + replication scorecard (5 verdict classes on a planted 3-subject world; noise-sign pigeonhole guarded; adequacy floor; **non-zero baseline recovery**) + **run_replication driver** (intake→score chaining, FAIL gates scoring) | ✅ 24/24 (2026-07-10) |
+| `verify_multisubject.py` | intake validator (failure classes, WARN vs FAIL, verdict JSON) + replication scorecard (5 verdict classes on a planted 3-subject world; noise-sign pigeonhole guarded; adequacy floor; **non-zero baseline recovery**) + **run_replication driver** (intake→score chaining, FAIL gates scoring) + **GLOBAL-timestamp rebase & WITHIN-CLIP scoring regression** (Simpson's-paradox fixture: pooled inverts to 0.17, within-clip recovers 0.66) | ✅ 28/28 (2026-07-10) |
 
 ## 14. Roadmap (future, in intended order — nothing scheduled)
 
@@ -451,24 +455,31 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
    the shippable method** (within-06 AUCs 0.68–0.70, direction-aware).
 2. **Remaining validation debt:** re-tune `WAVLM_LAYER_INDEX` empirically; the one-time WavLM
    `use_amp`/`truncate_encoder` fp32 A/B (§12.4).
-3. **Graph attribution v2 — predictive coupling model: BUILT 2026-07-10, evaluation pending.**
-   Masked-node prediction (predict each channel from its cross-modal neighbours; flag broken
-   couplings) + per-feature residuals + within-clip scoring — both v1 failure modes addressed
-   by construction. Design + pre-registered bars: `Documentation/COUPLING_MODEL_DESIGN.md`;
-   code `stgae/coupling_{model,fit,attribute}.py`; tests 21/21. **Next desktop session: run
-   `validation/gt_subjectA/coupling_evaluate.py`** → pass all bars = complement channel set to
-   the marginal table; fail Bar 1 or 4 = graph line closed for the n=1 era.
+3. ~~**Graph attribution v2 — predictive coupling model.**~~ **BUILT + EVALUATED + FALSIFIED
+   2026-07-10** (`validation/gt_subjectA/COUPLING_RESULTS.md`; `COUPLING_MODEL_DESIGN.md §9`).
+   Masked-node prediction with per-feature residuals + within-clip scoring. Outcome: Bar 0
+   (0.801) and Bar 1 (0.754 — a coupling feature above the marginal path) PASS, but the go/no-go
+   **Bar 4 FAILS** (truth flag-rate 93% vs baseline 6%) along with Bars 2/3. Per the
+   pre-registered decision rule (fail Bar 1 **or** 4 → discard), **v2 is discarded and the graph
+   line is CLOSED for the n=1 era.** Two pre-registered graph objectives (v1 reconstruction, v2
+   coupling) both fell to the same small-baseline brittleness → the blocker is **N=1**. The
+   coupling substrate (`coupling_{model,fit,attribute}.py`, tests 21/21) is retained for a future
+   **supervised** graph head once N>1 subjects exist.
 4. **VideoMAE v2** (deferred, no re-entry): its criterion presumed a *working* ST-GAE, which the
    2026-07-09 evaluation did not yield.
 5. **Supervised training path**: needs N>1 annotated subjects; the ELAN corpus +
-   `temporal_window_generator.py` exist for it. **N=1 is the current hard ceiling on every
-   claim** — more annotated subjects is the single highest-value next input.
-   **⏳ UNBLOCKING (2026-07-10):** more **annotated subjects from the same experiment exist**
-   (same questions, same interview structure across subjects; no further SubjectA sessions
-   available) — **videos to be shared ~2026-07-11**. When they arrive: run the production
-   cascade + calibration per subject, replicate the SubjectA channel AUCs (does AU12 tremor /
-   hand↔face generalize, or is it a SubjectA quirk?), re-run the coupling 4-bar evaluation
-   per subject, and only then consider the supervised head.
+   `temporal_window_generator.py` exist for it.
+   **⏳→ N=2 REACHED (2026-07-10): SubjectB processed; SubjectA's signal does NOT replicate**
+   (`validation/multisubject/RESULTS.md`). Production cascade on SubjectB (7 clips) + within-clip
+   replication scorecard: **0 REPLICATES / 7 SUBJECT-SPECIFIC / 127 NO-SIGNAL**. SubjectA's AU12
+   lip-tremor family (0.60) and silent-speech incongruence (0.68) are A-specific; **SubjectB leaks
+   through blink_rate (0.71), null in A**. The per-channel deception signal is **idiosyncratic
+   (per-subject)** at N=2 — which *vindicates* per-subject calibration + attribution and *cautions
+   against* any fixed cross-subject channel weighting. **Consequence for the supervised head: do
+   NOT start it — at N=2 there is no robust cross-subject channel to learn; it would need many
+   more subjects and likely per-subject channel profiles.** 4 more sessions incoming will test the
+   subject-specificity hypothesis. (Coupling 4-bar re-eval per subject still pending — lower value
+   now the marginal signal itself doesn't transfer.)
    **TOOLING READY (2026-07-10):** `multisubject/intake_validator.py` (gate each package before
    GPU time) + `multisubject/replication_scorecard.py` (pre-registered REPLICATES/SUBJECT-SPECIFIC
    verdicts). **Full desktop runbook + pre-registered criteria + N>1 future-work specs
@@ -483,7 +494,7 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 | **`Documentation/MASTER_REFERENCE.md`** (this) | Living master — always current; updated with every change |
 | `Documentation/PIPELINE_ARCHITECTURE.md` | The block diagram (Mermaid) — visual companion, kept in sync |
 | `Documentation/ST_GAE_DESIGN.md` | **Frozen** — v1 graph design + §10 falsification record |
-| `Documentation/COUPLING_MODEL_DESIGN.md` | Graph-line v2 design + pre-registered bars (§9 outcome pending) |
+| `Documentation/COUPLING_MODEL_DESIGN.md` | **Frozen** — graph-line v2 design + pre-registered bars + §9 falsification record (2026-07-10; full evidence `validation/gt_subjectA/COUPLING_RESULTS.md`) |
 | `Documentation/MULTISUBJECT_REPLICATION_PLAN.md` | Multi-subject runbook + pre-registered replication criteria + N>1 future-work specs — **the desktop handoff for the new corpus** |
 | `audio_diarization/SPOVNOB_MASTER_REFERENCE.md` | Deep authority for the audio side |
 | `deception_detection/RECORDING_TIMELINE_AND_ACOUSTIC_UPGRADE_PLAN.md` | **Historical** — completed plan (Phases A+B, done 2026-07-02) |
@@ -868,3 +879,86 @@ line. Completed plan docs are frozen as history, never edited retroactively.
     Regression-checked: `verify_recording_calibration` green, `verify_end_to_end_pipeline`
     375/375 (Pass-5 report hook), coupling 21 / stgae 16 unaffected. Runbook (§4) + plan doc
     (§2.3–2.5) updated with the driver and the baseline-index rule.
+- **2026-07-10 (desktop)** — **Home commits pulled + verified on the RTX 6000 box, then graph-line
+  v2 EVALUATED and FALSIFIED.** Fast-forwarded the four laptop commits (coupling model `aece590`,
+  analyst report `6552a61`, multisubject toolchain `da86748`, pre-flight hardening `90ea680`);
+  re-ran all four new/graph suites on this box — **coupling 21/21, report 24/24, multisubject
+  24/24, stgae 16/16** (torch 2.5.1+cu121, matches the laptop numbers). Then ran the one task that
+  needs the desktop's data: `coupling_evaluate.py` on `REC_SUBJECTA_SYNCED_*` (all 8 synced raw
+  CSVs + ELAN present).
+  - **Result — v2 FALSIFIED by Bar 4** (full write-up `validation/gt_subjectA/COUPLING_RESULTS.md`;
+    `COUPLING_MODEL_DESIGN.md §9`): fit healthy (12 255 params, ratio **0.801 < 0.90 gate**, Bar 0
+    PASS) and — unlike v1 — **Bar 1 PASSES at 0.754** (feature `postural_stillness` coupling, above
+    the marginal path's ~0.70). But the go/no-go **Bar 4 FAILS**: global coupling-z median baseline
+    −0.63 / truth 39.69 / lie 22.23, flag-rate baseline 6% / **truth 93%** / lie 91% — truth spikes
+    harder than lie, the same small-baseline brittleness as v1. Bars 2 (top nodes
+    `[voice, au_upper, head_pose]`, no au_mouth/hand) and 3 (gaze decoupling 0.295) also fail.
+  - **Root cause:** the design's bet (conditional couplings transfer across the domain gap where
+    marginals don't) **holds per-feature within-clip** (Bar 1) but **breaks in aggregate** — the
+    node-summed global coupling-z is still a distance-from-baseline meter (GLOBAL(sum) AUC 0.146,
+    *inverted*, same sign flip as scalar `deviation_magnitude` 0.384). Bar 4 reads the aggregate on
+    purpose (production false-positive gate) and fails.
+  - **Decision (pre-registered, not moved):** v2 discarded like v1; **graph line CLOSED for the
+    n=1 era.** Two independent pre-registered graph objectives, one failure mode → the obstacle is
+    **N=1**, not the model. The coupling substrate is retained for a future supervised head once
+    N>1 subjects exist. **The marginal per-channel z-score attribution remains the shipped
+    instrument** (unchanged). Artifacts: `pipeline_system_outputs/REC_SUBJECTA/coupling_fit/` +
+    `coupling_attribution.csv` (761 windows, file_index 2–7; clip 1 has no `.eaf`; baseline clip 0
+    is the Bar-4 reference). Next: the new annotated subjects (§14.5) — now the critical unblock,
+    not a nice-to-have.
+- **2026-07-10 (desktop, SubjectB bring-up)** — Started the N>1 replication on the first new
+  subject (`my_videos/01SubjectB_session2`, 7 clips; `validation/gt_subjectB/`). Bring-up + 2 fixes:
+  - **Naming:** SubjectB carries two colliding original-ID series (`B06Cxxx`, `B41Cxxx`) that break
+    the toolchain's `C###` clip token; the real sequence is the `-NN_` suffix. Mapping empirically
+    verified (every ELAN max-end fits its matched video) and pinned in
+    `validation/gt_subjectB/subjectB_manifest.json`. Canonicalized to bare `00_baseline..
+    06_interview` names so the whole downstream pipeline is convention-identical to SubjectA (same
+    80 ms open-GOP A/V skew auto-trimmed). A normalized ELAN dir (`normalize_elan.py`) gives each
+    interview a unique `C{f+1:03d}` token (+ fixes a `LIe→Lie` label typo) so the pre-registered
+    `replication_scorecard.py` runs unmodified. SPOVNOB Stage-1 ingests bare symlinks to the **raw**
+    (audio-bearing) videos — the canonical MP4s are video-only (audio split to `_hubert.wav`), so
+    Layer-0 rejects them. Note: SubjectB clips 04 (Truth-only) and 06 (876 s Truth / 17 s Lie) are
+    effectively single-label; within-clip contrast concentrates in clips 01/02 (the long B06
+    interviews); pooled budget 829 s Lie / 1498 s Truth clears the ≥30-window adequacy floor.
+  - **click_ui.py audio-cache bug FIXED (recurring):** `/audio` was served on a bare static URL
+    with `max_age=30d`, so the browser replayed a *previous* session's audio at the same
+    `localhost:5050/audio`. The `video_sha8` field (present, labeled "browser cache-buster") was
+    never wired in. Now the served HTML uses `audio?v=<video_sha8>` (content-unique) and is served
+    `no-store`; stdlib self-test still green.
+- **2026-07-10 (desktop) — N=2 REPLICATION RESULT: SubjectA's signal is SUBJECT-SPECIFIC.**
+  SubjectB fully processed (SPOVNOB Stage-1 72 segments → Stage-2 cascade 7 clips → calibrate/
+  assemble; healthy baseline median dev 10.06 ≈ √134, blink 100% populated). Scored against
+  SubjectA with the pre-registered `replication_scorecard`. Full write-up
+  `validation/multisubject/RESULTS.md`.
+  - **Result: 0 REPLICATES / 7 SUBJECT-SPECIFIC / 127 NO-SIGNAL.** No tracked channel clears the
+    0.60 bar in both subjects. SubjectA's AU12 lip-tremor family (0.601) + silent-speech
+    incongruence (0.681) are A-specific; **SubjectB leaks through blink_rate (0.710), null in A
+    (0.434)**. Positive control intact (SubjectA within-clip-06 AU12 0.68). Conclusion: per-channel
+    deception leakage is **idiosyncratic per person** at N=2 — vindicates per-subject calibration +
+    attribution; cautions against fixed cross-subject weighting; supervised head stays deferred (no
+    robust cross-subject channel to learn at N=2).
+  - **Two scorecard BUG-FIXES (not criteria changes; pre-registered thresholds unchanged):**
+    (1) **global-vs-local timestamps** — scorer matched GLOBAL assembled-CSV window times against
+    LOCAL ELAN intervals (SubjectA → 0 labels, SubjectB → shifted/mislabeled); fixed by rebasing
+    each clip to local (subtract clip min start == file_offset_ms); restored SubjectA's exact
+    509/140 counts. (2) **pooled → within-clip scoring** — pooled |z| AUC failed the SubjectA
+    positive control (her own channels ~0.50); now AUC uses within-clip |z| percentile + direction
+    on within-clip-centered z (the 07-08 / coupling-eval method). Regression added to
+    `verify_multisubject.py` (Simpson's-paradox fixture, global times: pooled inverts to 0.17,
+    within-clip recovers 0.66) → suite **24→28 green**.
+  - **SubjectB bring-up recap:** dual-series naming (`B06Cxxx`/`B41Cxxx`) resolved via bare-name
+    canonicalization + empirically-verified manifest; ELAN normalized (unique C-tokens + `LIe→Lie`);
+    SPOVNOB on raw audio-bearing symlinks; click_ui audio browser-cache bug fixed. Drivers:
+    `validation/gt_subjectB/`. Cascade ran 3-way (GPU only ~half-used — shard per-clip next time).
+- **2026-07-15 (desktop) — N=6 corpus bring-up (SubjectC–F) + generic tooling + onnxruntime GPU
+  fix.** All 4 remaining sessions arrived (SubjectC/D/E/F; single-series `B05/B31/B36/B03` naming).
+  Built manifest-driven generic drivers in `validation/multisubject/`: `prep_subject.py` (manifest
+  + bare symlinks + normalized ELAN with title-cased labels), `canonicalize_generic.py`,
+  `cascade_generic.py`, `assemble_generic.py`. Intake caught real issues (lowercase/mixed-case
+  labels normalized; D/E have interviews with no `.eaf` → cascaded, not scored). All 30 clips
+  canonicalized. **onnxruntime GPU regression fixed:** env had `onnxruntime-gpu 1.17.1` (CUDA 11,
+  wrong for this CUDA-12 box) → InsightFace fell back to CPU; restored `onnxruntime-gpu==1.19.2`
+  and set the CUDA-lib launch recipe (`import torch` first + `LD_LIBRARY_PATH`=nvidia libs) — cascade
+  now binds `CUDAExecutionProvider` (details: §11 stack + the cascade-throughput memory). SubjectC
+  clicked + Stage-1 (49 segs) + Stage-2 cascade (GPU). D/E/F await operator clicks. Next: finish
+  D/E/F → N=6 replication scorecard.

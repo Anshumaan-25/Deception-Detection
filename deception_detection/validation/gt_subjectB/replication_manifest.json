@@ -1,0 +1,6 @@
+{"subjects": [
+  {"name": "SubjectA", "recording_dir": "pipeline_system_outputs/REC_SUBJECTA",
+   "elan_dir": "/home/user1/Documents/Deception_Detection/my_videos/00SubjectA_session1/annotated Videos anushree"},
+  {"name": "SubjectB", "recording_dir": "pipeline_system_outputs/REC_SUBJECTB",
+   "elan_dir": "pipeline_system_outputs/SUBJECTB_SRC/elan_normalized"}
+]}

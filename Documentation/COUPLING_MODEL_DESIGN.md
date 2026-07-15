@@ -143,7 +143,29 @@ The model is tiny; the speed traps are transfer and Python overhead, not FLOPs:
   bar-by-bar verdict and writes `coupling_attribution.csv`)
 - MASTER_REFERENCE §12/§14 + changelog sync.
 
-## 9. Empirical outcome
+## 9. Empirical outcome — FALSIFIED 2026-07-10 (Bar 4)
 
-*(to be filled by coupling_evaluate.py on the desktop — this section intentionally
-empty at design time.)*
+Run on the desktop against `REC_SUBJECTA_SYNCED_*` (full write-up:
+`deception_detection/validation/gt_subjectA/COUPLING_RESULTS.md`). Verdict per the §6
+decision rule: **v2 is discarded; the graph line is closed for the n=1 era.**
+
+| Bar | Threshold | Result | |
+|---|---|---|---|
+| 0 fit health | ratio < 0.90 | 0.801 | PASS |
+| 1 sensitivity | best within-06 AUC ≥ 0.69 | **0.754** (feature `postural_stillness`) | PASS |
+| 2 interpretability | top-3 nodes include au_mouth/hand | `[voice, au_upper, head_pose]` | FAIL |
+| 3 relational | gaze decoupling AUC ≥ 0.55 | 0.295 | FAIL |
+| 4 holdout truth stability (go/no-go) | truth flag-rate ≤ baseline+15% | baseline 6% → **truth 93%**, lie 91% | **FAIL** |
+
+The central bet — conditional couplings transfer across the baseline↔interview domain gap where
+marginals don't — **holds per-feature within-clip (Bar 1 passes, beating the marginal path's
+~0.70) but breaks in aggregate**: the node-summed global coupling-z is still a
+distance-from-baseline meter (truth median 39.69 > lie 22.23; GLOBAL(sum) AUC 0.146, *inverted*,
+same signature as scalar `deviation_magnitude`). Bar 4 reads the aggregate on purpose (it is the
+production false-positive gate) and fails identically in character to v1 (truth 81% there).
+
+**This is the SECOND pre-registered graph formulation falsified by the same small-baseline
+brittleness** (v1 reconstruction, v2 predictive coupling). Two independent objectives, one failure
+mode → the blocker is **N=1**, not the architecture. Per §6, revisit the graph line only with N>1
+subjects and a supervised head; the coupling substrate (all tested) is reusable for it. The
+marginal per-channel z-score attribution remains the shipped instrument.

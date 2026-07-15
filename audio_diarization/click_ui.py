@@ -1003,7 +1003,15 @@ def create_app(ui: UISession, session: ClickSession):
 
     @app.get("/")
     def index() -> Any:
-        return Response(HTML_PAGE, mimetype="text/html")
+        # Cache-bust the audio by the video SHA (the video_sha8 field was added
+        # for exactly this) so a new session never replays a previous session's
+        # browser-cached /audio, and serve the HTML no-store so a reload always
+        # picks up the current session's audio URL. (Recurring bug: the bare
+        # /audio URL + 30-day max_age made the browser replay stale audio.)
+        html = HTML_PAGE.replace('src="audio"', f'src="audio?v={ui.video_sha8}"')
+        response = Response(html, mimetype="text/html")
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/meta")
     def meta() -> Any:

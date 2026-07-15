@@ -117,7 +117,14 @@ def load_labeled_windows(recording_dir, elan_dir):
             continue
         iv = parse_eaf(eafs[0])
         cdf = cdf.copy()
-        labs, ovs = zip(*[label_window(r.start_time_ms, r.end_time_ms, iv)
+        # The assembled *_recording_calibrated.csv carries GLOBAL window times
+        # (rebased by file_offset_ms during assembly), but each ELAN .eaf is
+        # LOCAL to its clip. Rebase back to clip-local before matching, else
+        # large offsets (SubjectA) yield ZERO overlap and small ones (SubjectB)
+        # yield SHIFTED/mislabeled overlap. Per clip, the first window sits at
+        # local 0, so the group's min start == file_offset_ms exactly.
+        off = float(cdf["start_time_ms"].min())
+        labs, ovs = zip(*[label_window(r.start_time_ms - off, r.end_time_ms - off, iv)
                           for r in cdf.itertuples()])
         cdf["gtruth"], cdf["ov"] = labs, ovs
         frames.append(cdf)
@@ -128,17 +135,33 @@ def load_labeled_windows(recording_dir, elan_dir):
 
 
 def score_subject(pure):
-    """Per-channel: (auc, direction, n_lie, n_truth) on |z|, direction on signed z."""
+    """Per-channel: (auc, direction, n_lie, n_truth), scored WITHIN-CLIP.
+
+    The magnitude signal in this project is within-clip, not pooled: pooling |z|
+    across clips is confounded by clip-level offsets and collapses even SubjectA's
+    validated channels to chance (positive-control failure: pooled AU12 0.50 vs
+    within-clip-06 0.68). So — matching the 07-08 method and coupling_evaluate —
+    AUC is computed on the **within-clip percentile of |z|** (rank each channel
+    within its own clip, then pool), and direction on **within-clip-centered signed
+    z** (subtract each clip's median, keeping z-units so DIRECTION_MIN still applies).
+    The pre-registered thresholds (MIN_WINDOWS, REPLICATE_AUC, DIRECTION_MIN, the
+    verdict logic) are UNCHANGED — only the clip-confound control is corrected."""
     feats = [c for c in pure.columns
-             if c not in NON_FEATURE_COLUMNS + ["gtruth", "ov"]
+             if c not in NON_FEATURE_COLUMNS + ["gtruth", "ov", "file_index",
+                                                "clip_window_id"]
              and pure[c].dtype.kind in "fi"]
-    lie, tru = pure[pure.gtruth == "Lie"], pure[pure.gtruth == "Truth"]
+    grp = pure.groupby("file_index")
+    is_lie = (pure.gtruth == "Lie").to_numpy()
+    is_tru = (pure.gtruth == "Truth").to_numpy()
     out = {}
     for c in feats:
-        lv = lie[c].to_numpy(dtype=float); tv = tru[c].to_numpy(dtype=float)
-        n_l, n_t = int(np.isfinite(lv).sum()), int(np.isfinite(tv).sum())
-        a = auc(np.abs(lv), np.abs(tv))
-        d = np.nanmedian(lv) - np.nanmedian(tv) if n_l and n_t else np.nan
+        pct = grp[c].transform(lambda s: s.abs().rank(pct=True)).to_numpy(dtype=float)
+        cen = (pure[c] - grp[c].transform("median")).to_numpy(dtype=float)
+        raw = pure[c].to_numpy(dtype=float)
+        n_l = int(np.isfinite(raw[is_lie]).sum()); n_t = int(np.isfinite(raw[is_tru]).sum())
+        a = auc(pct[is_lie], pct[is_tru])          # within-clip |z| percentile
+        d = (np.nanmedian(cen[is_lie]) - np.nanmedian(cen[is_tru])
+             if n_l and n_t else np.nan)           # within-clip-centered signed z
         # a direction is only EXPRESSED past the pre-registered shift floor —
         # the sign of a noise-sized median difference carries no information
         expressed = np.isfinite(d) and abs(d) >= DIRECTION_MIN

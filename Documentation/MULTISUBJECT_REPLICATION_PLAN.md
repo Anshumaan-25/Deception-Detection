@@ -96,6 +96,21 @@ The scorecard reports SubjectA's validated `TRACKED_CHANNELS` first — "does *t
 replicate?" is the whole point. It also scores every other channel, so a signal that is
 *stronger* across subjects than it was in SubjectA can surface.
 
+**Scoring is WITHIN-CLIP (corrected 2026-07-10 during the SubjectB run; thresholds unchanged).**
+Two bugs were fixed the first time the scorecard met real assembled data — both were bug-fixes to
+the label/measurement mechanism, NOT changes to the pre-registered criteria:
+1. *Global-vs-local timestamps* — the assembled `*_recording_calibrated.csv` carries GLOBAL window
+   times but each `.eaf` is clip-LOCAL; the scorer now rebases each clip to local (subtract the
+   clip's min `start_time_ms`, which equals its `file_offset_ms`). Before the fix, large offsets
+   yielded zero labels and small ones yielded shifted labels.
+2. *Pooled → within-clip |z|* — pooled AUC failed the SubjectA positive control (her own validated
+   channels scored ~0.50, because pooling is confounded by clip-level offsets — the same reason the
+   scalar deviation magnitude has no pooled signal). AUC now uses the **within-clip percentile of
+   |z|** and direction uses **within-clip-centered signed z**, matching the 2026-07-08 method and
+   `coupling_evaluate`. `verify_multisubject.py` grew a Simpson's-paradox regression (global times;
+   pooled inverts, within-clip recovers). **First result: `validation/multisubject/RESULTS.md`
+   (N=2 — SubjectA's signal is SUBJECT-SPECIFIC, does not replicate in SubjectB).**
+
 ### 2.3 `run_replication.py` — the one-command driver + `replication_manifest.template.json`
 
 Chains intake → (manual GPU cascade) → scorecard around one manifest (§4). Run it before the

@@ -1,0 +1,103 @@
+{
+  "subject": "subjectF",
+  "recording_id": "REC_SUBJECTF",
+  "source_dir": "/home/user1/Documents/Deception_Detection/my_videos/05SubjectF_session6",
+  "canonical_dir": "pipeline_system_outputs/REC_SUBJECTF_SRC/canonical",
+  "spovnob_input": "pipeline_system_outputs/REC_SUBJECTF_SRC/spovnob_input",
+  "elan_normalized": "pipeline_system_outputs/REC_SUBJECTF_SRC/elan_normalized",
+  "baseline_file_index": 0,
+  "clips": [
+    {
+      "file_index": 0,
+      "role": "baseline",
+      "src_video": "B03C001-00_baseline.mp4",
+      "base": "00_baseline",
+      "orig_ctoken": "C001",
+      "eaf": "B03C001_TU.eaf",
+      "eaf_normalized": null,
+      "labels_norm": {},
+      "labels_fixed": 0
+    },
+    {
+      "file_index": 1,
+      "role": "interview",
+      "src_video": "B03C002-01_interview.mp4",
+      "base": "01_interview",
+      "orig_ctoken": "C002",
+      "eaf": "B03C002_TU2.eaf",
+      "eaf_normalized": "C002_subjectF.eaf",
+      "labels_norm": {
+        "Lie": 3
+      },
+      "labels_fixed": 2
+    },
+    {
+      "file_index": 2,
+      "role": "interview",
+      "src_video": "B03C003-02_interview.mp4",
+      "base": "02_interview",
+      "orig_ctoken": "C003",
+      "eaf": "B03C003_TU3.eaf",
+      "eaf_normalized": "C003_subjectF.eaf",
+      "labels_norm": {
+        "Lie": 2
+      },
+      "labels_fixed": 2
+    },
+    {
+      "file_index": 3,
+      "role": "interview",
+      "src_video": "B03C004-03_interview.mp4",
+      "base": "03_interview",
+      "orig_ctoken": "C004",
+      "eaf": "B03C004_TU4.eaf",
+      "eaf_normalized": "C004_subjectF.eaf",
+      "labels_norm": {
+        "Turth": 1,
+        "Truth": 1
+      },
+      "labels_fixed": 0
+    },
+    {
+      "file_index": 4,
+      "role": "interview",
+      "src_video": "B03C005-04_interview.mp4",
+      "base": "04_interview",
+      "orig_ctoken": "C005",
+      "eaf": "B03C005_TU5.eaf",
+      "eaf_normalized": "C005_subjectF.eaf",
+      "labels_norm": {
+        "Truth": 2
+      },
+      "labels_fixed": 0
+    },
+    {
+      "file_index": 5,
+      "role": "interview",
+      "src_video": "B03C006-05_interview.mp4",
+      "base": "05_interview",
+      "orig_ctoken": "C006",
+      "eaf": "B03C006_TU6.eaf",
+      "eaf_normalized": "C006_subjectF.eaf",
+      "labels_norm": {
+        "Truth": 2,
+        "": 2,
+        "Lie": 6
+      },
+      "labels_fixed": 7
+    },
+    {
+      "file_index": 6,
+      "role": "interview",
+      "src_video": "B03C007-06_interview.mp4",
+      "base": "06_interview",
+      "orig_ctoken": "C007",
+      "eaf": "B03C007_TU7.eaf",
+      "eaf_normalized": "C007_subjectF.eaf",
+      "labels_norm": {
+        "Lie": 1
+      },
+      "labels_fixed": 1
+    }
+  ]
+}

@@ -205,4 +205,59 @@ with tempfile.TemporaryDirectory() as tmp:
     check(run_driver(mpath, media_probe=False) == 1,
           "driver returns non-zero and withholds scoring when any package FAILs intake")
 
+print("5. GLOBAL-timestamp rebase + WITHIN-CLIP scoring (regression for the two "
+      "2026-07-10 SubjectB bugs)")
+# The assembled *_recording_calibrated.csv carries GLOBAL window times and a clip
+# confound (Simpson's paradox): a clip that is mostly-Truth also has high |z|, and a
+# clip that is mostly-Lie has low |z|. POOLED |z| AUC then INVERTS (truth looks more
+# deviant), while the real signal — Lie>Truth WITHIN each clip — is only visible after
+# clip-local ranking. Earlier fixtures used local times + equal clip offsets, so
+# neither bug could surface. This one reproduces both.
+def _eaf(intervals):  # intervals: list of (label, start_ms, end_ms)
+    slots, ann = [], []
+    for i, (lab, s, e) in enumerate(intervals):
+        slots += [f'<TIME_SLOT TIME_SLOT_ID="s{i}a" TIME_VALUE="{s}"/>',
+                  f'<TIME_SLOT TIME_SLOT_ID="s{i}b" TIME_VALUE="{e}"/>']
+        ann.append(f'<ANNOTATION><ALIGNABLE_ANNOTATION ANNOTATION_ID="a{i}" '
+                   f'TIME_SLOT_REF1="s{i}a" TIME_SLOT_REF2="s{i}b">'
+                   f'<ANNOTATION_VALUE>{lab}</ANNOTATION_VALUE></ALIGNABLE_ANNOTATION></ANNOTATION>')
+    return ('<?xml version="1.0" encoding="UTF-8"?><ANNOTATION_DOCUMENT><TIME_ORDER>'
+            + "".join(slots) + '</TIME_ORDER><TIER TIER_ID="gt">' + "".join(ann)
+            + '</TIER></ANNOTATION_DOCUMENT>')
+
+with tempfile.TemporaryDirectory() as tmp:
+    d = os.path.join(tmp, "Sconf"); elan = os.path.join(d, "elan"); os.makedirs(elan)
+    # clip1 (fidx1): mostly Truth, HIGH |z| baseline; clip2 (fidx2): mostly Lie, LOW |z|
+    open(os.path.join(elan, "B09C002_gt.eaf"), "w").write(
+        _eaf([("Truth", 0, 88000), ("Lie", 90000, 99000)]))     # mostly truth
+    open(os.path.join(elan, "B09C003_gt.eaf"), "w").write(
+        _eaf([("Truth", 0, 10000), ("Lie", 12000, 99000)]))     # mostly lie
+    rng = np.random.default_rng(3); rows = []
+    for fidx in range(3):
+        offset = fidx * 200000                                   # GLOBAL time (assembly-style)
+        mag = {1: 10.0, 2: 1.0}.get(fidx, 0.0)                   # clip confound: hi-|z| vs lo-|z|
+        for w in range(100):
+            local = w * 1000
+            if fidx == 1:   is_lie = 90000 <= local < 98000
+            elif fidx == 2: is_lie = 12000 <= local < 98000
+            else:           is_lie = False
+            rows.append({"window_id": w, "start_time_ms": offset + local,
+                         "end_time_ms": offset + local + 2000, "file_index": fidx,
+                         "sig": mag + (2.0 if is_lie else 0.0) + rng.normal(0, 0.3)})
+    pd.DataFrame(rows).to_csv(os.path.join(d, "REC_Sconf_recording_calibrated.csv"), index=False)
+
+    from multisubject.replication_scorecard import load_labeled_windows, score_subject, auc as _auc
+    pure = load_labeled_windows(d, elan)
+    check(not pure.empty, "GLOBAL-time windows still get labeled (timestamp rebase to clip-local)")
+    c1, c2 = pure[pure.file_index == 1], pure[pure.file_index == 2]
+    check((c1.gtruth == "Truth").sum() > (c1.gtruth == "Lie").sum()
+          and (c2.gtruth == "Lie").sum() > (c2.gtruth == "Truth").sum(),
+          "labels land on the correct clip-local intervals (clip1 mostly-Truth, clip2 mostly-Lie)")
+    a_within = score_subject(pure)["sig"]["auc"]
+    lie, tru = pure[pure.gtruth == "Lie"], pure[pure.gtruth == "Truth"]
+    a_pooled = _auc(np.abs(lie["sig"].to_numpy(float)), np.abs(tru["sig"].to_numpy(float)))
+    check(a_within >= 0.60, f"WITHIN-CLIP scoring recovers the Lie>Truth signal (auc {a_within:.2f})")
+    check(a_pooled < 0.50, f"POOLED |z| AUC is confounded/inverted here (auc {a_pooled:.2f}) — "
+          "the exact positive-control failure the within-clip fix corrects")
+
 print(f"\nverify_multisubject: {ok} checks passed — no GPU, no real footage.")
