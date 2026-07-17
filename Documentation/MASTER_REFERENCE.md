@@ -448,6 +448,61 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 
 ## 14. Roadmap (future, in intended order — nothing scheduled)
 
+### ► NEXT STEPS (current, as of 2026-07-17 — post-N=6, all analysis on existing data DONE)
+The N=6 programme is **complete and banked**: three independent instruments (marginal scorecard,
+supervised LOSO, per-subject coupling) agree the signal is **subject-specific**, and both no-new-data
+accuracy levers (§6.1 aggregation, §6.2 meta-analysis) are run. The remaining steps are **data-gated,
+not analysis-gated.** Narrative + full menu: `Documentation/PROJECT_RETROSPECTIVE.md`. Chosen goal:
+a **general cross-subject detector**; declared data runway: **≤~6 more annotated subjects** (N→~12).
+
+**Honest framing (state this up front):** the per-subject *instrument works* (positive controls pass;
+SubjectA silent-speech 0.68, SubjectB blink 0.71; A/B strong, C/D moderate, E/F weak). What does not
+exist at N=6 is a *universal* model. At the declared runway (N≈12) a **validated universal supervised
+detector is still out of reach** (that needs N≈50–200); the realistic general-detector play is the
+weak-universal panel below, treated as hypothesis-generating with wide CIs.
+
+1. **Get subjects #7+ in (THE bottleneck — highest-value action).** Everything else waits on this.
+   Per subject: one operator click → the generic toolchain (`validation/multisubject/*`) runs
+   prep → canonicalize → SPOVNOB Stage-1 → Stage-2 cascade → assemble → re-score in one pass. Recipe:
+   `Documentation/RESUME_STATE.md` §4. GPU scheduling: serialize Stage-1 (~21 GB pyannote spikes),
+   overlap cascades (`cascade_orchestrator.sh`); shard cascade per-clip (MediaPipe-CPU-bound).
+2. **At each new N, re-run the two levers and watch ONE number.** Re-run
+   `validation/multisubject/meta_analysis.py` + `aggregate_evaluate.py` (and the full scorecard + LOSO
+   + coupling — all re-run in one pass on the larger manifest). **The metric that decides the
+   general-detector question is the weak-universal PANEL's LOSO *window* AUC** (N=6 baseline = **0.523**,
+   vs 0.469 for the full 134-channel model):
+   - climbs toward ~0.60 at N≈12 → **genuine progress**; expand/firm up the panel channels;
+   - stalls at ~0.52 → the **null hardens at an authoritative sample size** (also a real, publishable
+     result).
+   Secondary watch: does the §6.2 meta-analysis panel (currently emotion_confidence_mean,
+   wavlm_latent_9, gaze_y_mean, AU6_max, AU2_velocity_max) *grow* or *shrink* with more subjects — a
+   shrinking panel means the 5 candidates were N=6 noise.
+3. **Optional, do-while-waiting (annotation-side, your end, no code):** ground-truth quality on the
+   NEW sessions — balanced Lie/Truth per clip and clean answer-segments. SubjectF could not even be
+   coupling-evaluated for lack of ≥20 balanced pure windows per clip; better labels raise the ceiling
+   of every method above.
+
+**Do NOT (closed doors — don't re-open without a much larger corpus or an explicit goal change):**
+- resurrect any unsupervised global-anomaly end-stage (ST-GAE recon / coupling-z) — Bar 4 closed it
+  5× across A/B/C/D/E;
+- build a *per-subject supervised* model — that is the *personalised* fork (retrospective §6.3) and
+  requires a **label-doctrine change** (ELAN labels become training data for that one individual) +
+  explicit user sign-off; the current goal is the *general* detector, so it is off unless the goal
+  changes;
+- quote any cross-subject model's *within-sample* accuracy (the memorisation trap the TFN archival +
+  LOSO honesty gates exist to prevent);
+- add more features / bigger models — the bottleneck is **N and the construct**, not feature richness;
+- drop the pre-registration / Bar-4 discipline to make numbers look better — it is why these results
+  are trustworthy.
+
+**Reachability by data runway (which paths each unlocks):** ≤~6 more (N≈12, the declared runway) →
+levers #1–2 above + coarse aggregation only; ~20–50 → hierarchical/mixed-effects becomes viable
+(retrospective §6.4); 50–200 → a genuine universal-model attempt (§6.5), the only path to a *validated*
+general detector, at a sample size where positive-or-null is authoritative.
+
+---
+*The historical roadmap items below are retained for provenance (most are done/closed).*
+
 1. ~~SPOVNOB production pass~~ + ~~ST-GAE end-stage~~ — **both done 2026-07-09** (see changelog).
    Production run validated (`REC_SUBJECTA`), and the reconstruction-ST-GAE was implemented,
    evaluated, and **falsified by its own pre-registered Bar 4** (`validation/gt_subjectA/
@@ -1052,3 +1107,13 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   AUC — climbing toward ~0.60 at N≈12 = real progress, stalling at ~0.52 = the null hardens
   authoritatively.** No doctrine change; labels only scored. Write-up
   `validation/multisubject/ACCURACY_LEVERS_N6.md`.
+- **2026-07-17 (desktop) — §14 NEXT STEPS block added (data-gated roadmap).** Documented the current
+  next steps at the top of §14: N=6 analysis is complete/banked; remaining work is data-gated. Goal
+  = general cross-subject detector; runway = ≤~6 more subjects (N→~12). Steps: (1) get subjects #7+ in
+  via the generic toolchain [THE bottleneck]; (2) at each new N re-run meta_analysis.py +
+  aggregate_evaluate.py (+ scorecard/LOSO/coupling) and watch the weak-universal PANEL's LOSO window
+  AUC (N=6=0.523 vs 0.469 full) — toward ~0.60 = progress, stall ~0.52 = null hardens; (3) optional
+  ground-truth quality on new sessions. Explicit closed doors: no unsupervised global-anomaly
+  end-stage, no per-subject supervised model without a goal change + label-doctrine sign-off, no
+  within-sample accuracy quoting, no feature-bloat, no dropping Bar-4 discipline. Reachability-by-N
+  table included. Authority narrative: PROJECT_RETROSPECTIVE.md.
