@@ -482,16 +482,22 @@ weak-universal panel below, treated as hypothesis-generating with wide CIs.
    coupling-evaluated for lack of ≥20 balanced pure windows per clip; better labels raise the ceiling
    of every method above.
 
-**Do NOT (closed doors — don't re-open without a much larger corpus or an explicit goal change):**
+**Do NOT (closed doors — re-openable only by explicit pre-registration, never silently):**
 - resurrect any unsupervised global-anomaly end-stage (ST-GAE recon / coupling-z) — Bar 4 closed it
-  5× across A/B/C/D/E;
+  5× across A/B/C/D/E. **Still closed** (2026-07-17: `STRUCTURAL_SIGNATURES_DESIGN.md` M3 is
+  deliberately NOT this — it fits no model at all, and carries a magnitude-confound kill-switch that
+  discards it if it behaves like one);
 - build a *per-subject supervised* model — that is the *personalised* fork (retrospective §6.3) and
   requires a **label-doctrine change** (ELAN labels become training data for that one individual) +
   explicit user sign-off; the current goal is the *general* detector, so it is off unless the goal
-  changes;
+  changes. **Still closed**;
 - quote any cross-subject model's *within-sample* accuracy (the memorisation trap the TFN archival +
   LOSO honesty gates exist to prevent);
-- add more features / bigger models — the bottleneck is **N and the construct**, not feature richness;
+- add more features / bigger models — the bottleneck is **N and the construct**, not feature richness.
+  **RE-OPENED 2026-07-17, narrowly scoped**, by the pre-registered
+  `Documentation/STRUCTURAL_SIGNATURES_DESIGN.md`: ONLY structure-level *re-representations of the
+  existing 134 calibrated channels* (rank/shape/pairwise arithmetic — no new extraction, no pipeline
+  changes, fixed bars + validity kill-switches, M1 primary / M3 secondary / M2 gated);
 - drop the pre-registration / Bar-4 discipline to make numbers look better — it is why these results
   are trustworthy.
 
@@ -554,6 +560,7 @@ general detector, at a sample size where positive-or-null is authoritative.
 | `Documentation/SUPERVISED_LOSO_DESIGN.md` | Pre-registered supervised LOSO-head spec (generalizability *test*, not a performance play). **§9 outcome FILLED (2026-07-17, N=6): SUBJECT-SPECIFIC, mean test AUC 0.469 — channels don't transfer; vindicates per-subject calibration.** Code: `multisubject/loso_head.py` + `validation/multisubject/loso_evaluate.py` |
 | `Documentation/MULTISUBJECT_REPLICATION_PLAN.md` | Multi-subject runbook + pre-registered replication criteria + N>1 future-work specs — **the desktop handoff for the new corpus** |
 | `Documentation/PROJECT_RETROSPECTIVE.md` | **The narrative companion** — full journey (every approach + fate), honest capability statement, and the ranked paths-to-accuracy menu (6.1 coarse decision units, 6.2 weak-broad meta-analysis, 6.3 per-subject supervised, 6.4 hierarchical, 6.5 scale N). Read when asked "does this work / what's next" |
+| `Documentation/STRUCTURAL_SIGNATURES_DESIGN.md` | Pre-registered "universal is a structure, not a channel" programme: M1 freeze-and-leak shape features (PRIMARY), M3 pairwise cross-modal contradiction (SECONDARY, provably-not-coupling-v2), M2 contrastive lie axis (TERTIARY, gated on M1/M3 ≥ PROMISING). One primary endpoint (LOSO window AUC vs panel 0.523), fixed bars, validity kill-switches. §8 outcome pending — NO code exists yet |
 | `audio_diarization/SPOVNOB_MASTER_REFERENCE.md` | Deep authority for the audio side |
 | `deception_detection/RECORDING_TIMELINE_AND_ACOUSTIC_UPGRADE_PLAN.md` | **Historical** — completed plan (Phases A+B, done 2026-07-02) |
 | `deception_detection/MERGE_INTEGRATION_PLAN.md` | **Historical** — merge plan; known-stale vs code even before completion |
@@ -1117,3 +1124,24 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   end-stage, no per-subject supervised model without a goal change + label-doctrine sign-off, no
   within-sample accuracy quoting, no feature-bloat, no dropping Bar-4 discipline. Reachability-by-N
   table included. Authority narrative: PROJECT_RETROSPECTIVE.md.
+- **2026-07-17 (desktop) — STRUCTURAL_SIGNATURES_DESIGN.md pre-registered (design only, NO code).**
+  After the read-only integration audit of the three "universal structure" ideas surfaced two
+  doctrinal blockers (the §14 features/models door; M3's rebrand-risk of the 5×-falsified coupling
+  v2) and several methodological traps (order-statistics over 18–38%-NaN acoustic channels = a
+  silence-correlated missingness detector; zero of the 134 calibrated channels covered by
+  graph_spec's raw-level modality map; contrastive shortcut via per-subject imputation fingerprints
+  like SubjectF's all-NaN blink_rate; method-level multiple comparisons on one tiny corpus), the
+  programme is now pre-registered BEFORE implementation: **M1 freeze-and-leak deviation-shape
+  features (PRIMARY)**, **M3 pairwise cross-modal contradiction (SECONDARY** — fits no model at all,
+  contradiction is definitionally orthogonal to global arousal, magnitude-confound kill-switch
+  enforces it), **M2 linear contrastive lie axis (TERTIARY, gated** on M1/M3 ≥ PROMISING). Single
+  primary endpoint: strict LOSO **window** AUC vs the panel baseline 0.523 (full-134 0.469); bars
+  BREAKTHROUGH ≥0.62 & 4/6 ≥0.58 (identical to the LOSO GENERALIZES bar) / PROMISING ≥0.56 & ≥0.543
+  & 4/6 >0.52 / NULL. Four validity kill-switches (truth-FP Bar-4 analog; missingness confound
+  |ρ|<0.3; magnitude confound |ρ|<0.5; subject-ID shortcut probe). New human-judgment artifact
+  `multisubject/channel_families.py` (134-channel family/semantic map, activity-like vs level-like,
+  NaN-≤10%-support rule excluding blink_rate + the acoustic-volatility family + wavlm latents) must
+  be curated and FROZEN before any scoring. Honest priors recorded: M1 uncertain, M3 weakly
+  positive (silent-speech recurs A 0.68 / D 0.63), M2 NULL at N=6. §14 features-door re-opened
+  narrowly + annotated; anomaly + per-subject doors remain closed; §15 governance row added.
+  Deliverables + fixtures enumerated in the design doc §7; §8 outcome intentionally empty.
