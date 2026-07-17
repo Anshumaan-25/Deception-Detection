@@ -4,13 +4,23 @@
 > N>1 replication run. Read this top-to-bottom, then run the "WHAT TO DO ON RESUME" checklist.
 > Authority for everything else: `Documentation/MASTER_REFERENCE.md` (+ its changelog).
 
-> **⏹ WRAP-UP NOTE (2026-07-15 ~18:12): ALL PROCESSES STOPPED at user request.** SubjectC's
-> Stage-2 cascade was killed mid-run (2/6 clips complete — partial, incomplete output dirs remain).
-> Click UIs down, GPU idle. **ON RESUME, for SubjectC: re-run its cascade from scratch** (step 4c —
-> `cascade_generic.py` overwrites cleanly), then assemble. SubjectC's SPOVNOB Stage-1 IS done
-> (`session/rec_subjectc/pipeline_output.json`, 49 segs) — do NOT re-click or re-run Stage-1 for C.
-> SubjectD/E/F: all prepped + canonicalized; each still needs the operator CLICK → Stage-1 →
-> cascade → assemble (steps 4a-d). Then the N=6 scorecard (step 4e). Nothing is running.
+> **✅ N=6 PROGRAMME COMPLETE (2026-07-17).** All six subjects (A–F) cascaded + assembled; the
+> N=6 replication scorecard AND the pre-registered supervised LOSO head both ran. **VERDICT:
+> SUBJECT-SPECIFIC.** Scorecard: 0 REPLICATES / 8 SUBJECT-SPECIFIC / 126 NO-SIGNAL over 134 channels.
+> LOSO: mean held-out test AUC 0.469 (0/6 subjects ≥ 0.58) — a model trained on 5 people predicts the
+> 6th at/below chance. Deception leakage is idiosyncratic per person; per-subject calibration +
+> |z| attribution is vindicated as the sole shipped instrument. Full write-ups:
+> `validation/multisubject/RESULTS.md` (N=6 section) + `Documentation/SUPERVISED_LOSO_DESIGN.md` §9.
+> Nothing is running; all outputs on disk. **Next only if the user wants it:** optional per-subject
+> coupling 4-bar re-eval (low value now the marginal signal demonstrably doesn't transfer), or
+> extend the corpus (N ≫ 6) before revisiting any universal model. Local commit made; user pushes.
+>
+> <details><summary>(historical) 2026-07-15 wrap-up note — superseded by the line above</summary>
+>
+> ALL PROCESSES STOPPED at user request. SubjectC's Stage-2 cascade killed mid-run (2/6). On resume,
+> C was re-cascaded from scratch + assembled; D/E/F clicked → Stage-1 → cascade → assemble; then the
+> N=6 scorecard + LOSO. All done — see the ✅ note above.
+> </details>
 
 ## 1. The goal
 Test whether SubjectA's per-channel deception signal **replicates across subjects**. Corpus:
@@ -29,14 +39,14 @@ per person. Full write-up: `deception_detection/validation/multisubject/RESULTS.
 | Subject | prep+canon | clicked | Stage-1 | cascade | assembled | scored |
 |---|---|---|---|---|---|---|
 | A (session1) | ✓ | ✓ | ✓ | ✓ | ✓ (`REC_SUBJECTA`) | ✓ |
-| B (session2) | ✓ | ✓ | ✓ | ✓ | ✓ (`REC_SUBJECTB`) | ✓ (N=2 result) |
-| **C** (session3) | ✓ | ✓ | ✓ (49 segs) | **running on GPU** | ⬜ | ⬜ |
-| **D** (session4) | ✓ | ⬜ **NEEDS CLICK** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **E** (session5) | ✓ | ⬜ **NEEDS CLICK** | ⬜ | ⬜ | ⬜ | ⬜ |
-| **F** (session6) | ✓ | ⬜ **NEEDS CLICK** | ⬜ | ⬜ | ⬜ | ⬜ |
+| B (session2) | ✓ | ✓ | ✓ | ✓ | ✓ (`REC_SUBJECTB`) | ✓ |
+| C (session3) | ✓ | ✓ | ✓ | ✓ | ✓ (`REC_SUBJECTC`) | ✓ |
+| D (session4) | ✓ | ✓ | ✓ | ✓ | ✓ (`REC_SUBJECTD`) | ✓ |
+| E (session5) | ✓ | ✓ | ✓ | ✓ | ✓ (`REC_SUBJECTE`) | ✓ |
+| F (session6) | ✓ | ✓ | ✓ | ✓ | ✓ (`REC_SUBJECTF`) | ✓ |
 
-Prep + canonicalization are DONE for all of C/D/E/F (30 canonical clips). What remains for each of
-D/E/F: **operator click → Stage-1 → cascade → assemble**. Then score all 6 together.
+**All six complete + scored (N=6 verdict SUBJECT-SPECIFIC).** The steps below are retained only as
+the reusable recipe for any *future* subject (session7+); nothing in the current corpus needs them.
 
 ## 4. WHAT TO DO ON RESUME (checklist)
 Work from `deception_detection/`, conda env `spovnob_env`. `PY=~/anaconda3/envs/spovnob_env/bin/python`.

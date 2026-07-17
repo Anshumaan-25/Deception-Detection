@@ -1,0 +1,14 @@
+{"subjects": [
+  {"name": "SubjectA", "recording_dir": "pipeline_system_outputs/REC_SUBJECTA",
+   "elan_dir": "/home/user1/Documents/Deception_Detection/my_videos/00SubjectA_session1/annotated Videos anushree"},
+  {"name": "SubjectB", "recording_dir": "pipeline_system_outputs/REC_SUBJECTB",
+   "elan_dir": "pipeline_system_outputs/SUBJECTB_SRC/elan_normalized"},
+  {"name": "SubjectC", "recording_dir": "pipeline_system_outputs/REC_SUBJECTC",
+   "elan_dir": "pipeline_system_outputs/REC_SUBJECTC_SRC/elan_normalized"},
+  {"name": "SubjectD", "recording_dir": "pipeline_system_outputs/REC_SUBJECTD",
+   "elan_dir": "pipeline_system_outputs/REC_SUBJECTD_SRC/elan_normalized"},
+  {"name": "SubjectE", "recording_dir": "pipeline_system_outputs/REC_SUBJECTE",
+   "elan_dir": "pipeline_system_outputs/REC_SUBJECTE_SRC/elan_normalized"},
+  {"name": "SubjectF", "recording_dir": "pipeline_system_outputs/REC_SUBJECTF",
+   "elan_dir": "pipeline_system_outputs/REC_SUBJECTF_SRC/elan_normalized"}
+]}

@@ -14,6 +14,9 @@ Covers:
      consistent-direction/weak-magnitude → DIRECTION-ONLY;
      pure noise → NO-SIGNAL; all-NaN → INSUFFICIENT-DATA;
      baseline clips and sub-0.6-overlap windows never scored
+  6. supervised LOSO head: a transferable signal → GENERALIZES; a per-subject-unique
+     signal → SUBJECT-SPECIFIC; folds are leak-free (held-out subject never in train);
+     the pre-registered mean/n_clear bars map to the three verdict classes
 Run: python tests/verify_multisubject.py
 """
 import json, os, sys, tempfile
@@ -259,5 +262,48 @@ with tempfile.TemporaryDirectory() as tmp:
     check(a_within >= 0.60, f"WITHIN-CLIP scoring recovers the Lie>Truth signal (auc {a_within:.2f})")
     check(a_pooled < 0.50, f"POOLED |z| AUC is confounded/inverted here (auc {a_pooled:.2f}) — "
           "the exact positive-control failure the within-clip fix corrects")
+
+# ── 6. supervised LOSO head: leak-guard + positive/negative controls ──────────
+# build_feature_table/run_loso operate on within-clip-centered features. We construct
+# synthetic per-subject tables directly (bypassing CSV/ELAN IO, exercised above) to pin
+# the instrument's behaviour: a TRANSFERABLE signal must be caught (GENERALIZES), a
+# purely per-subject one must read SUBJECT-SPECIFIC, and no subject may ever leak across
+# the train/test split.
+from multisubject.loso_head import run_loso, _verdict
+
+def _world(transfer, seed):
+    """6 subjects × (n Lie + n Truth) windows, 6 channels. If transfer: ch0 separates
+    Lie>Truth in the SAME direction for everyone. Else: each subject separates on its OWN
+    UNIQUE channel (ch = subject index) — the held-out subject's channel is never lifted in
+    training, so a cross-subject model cannot use it (chance on the held-out person)."""
+    NCH = 6
+    rng = np.random.default_rng(seed); Xs, ys, ss = [], [], []
+    for si, name in enumerate("ABCDEF"):
+        nL, nT = 80, 80
+        X = rng.normal(0, 1.0, size=(nL + nT, NCH))
+        y = np.array([1] * nL + [0] * nT)
+        ch = 0 if transfer else si               # shared vs per-subject-unique channel
+        X[:nL, ch] += 1.2                        # lift Lie windows on that channel
+        Xs.append(pd.DataFrame(X, columns=[f"c{i}" for i in range(NCH)]))
+        ys.append(y); ss.append(np.array([f"Subject{name}"] * (nL + nT)))
+    return (pd.concat(Xs, ignore_index=True), np.concatenate(ys),
+            np.concatenate(ss), [f"c{i}" for i in range(NCH)])
+
+Xt, yt, st, ft = _world(transfer=True, seed=11)
+res_t = run_loso(Xt, yt, st, ft)
+check(res_t["verdict"] == "GENERALIZES",
+      f"LOSO catches a TRANSFERABLE signal → GENERALIZES (mean {res_t['mean_auc']:.2f})")
+# leak-guard: every fold's held-out subject must be excluded from its own training set —
+# a leak would push AUC unrealistically high; the shared signal caps near its Bayes rate.
+check(all(0.5 < r["test_auc"] < 0.999 for r in res_t["rows"] if np.isfinite(r["test_auc"])),
+      "LOSO folds are honest (held-out subject excluded from train — no 1.0 leak)")
+
+Xn, yn, sn, fn = _world(transfer=False, seed=12)
+res_n = run_loso(Xn, yn, sn, fn)
+check(res_n["verdict"] == "SUBJECT-SPECIFIC",
+      f"LOSO reads a PER-SUBJECT-only signal as SUBJECT-SPECIFIC (mean {res_n['mean_auc']:.2f})")
+check(_verdict(0.63, 4, 6) == "GENERALIZES" and _verdict(0.58, 2, 6) == "WEAK/PARTIAL"
+      and _verdict(0.50, 0, 6) == "SUBJECT-SPECIFIC",
+      "pre-registered LOSO bars map mean/n_clear → the three verdict classes")
 
 print(f"\nverify_multisubject: {ok} checks passed — no GPU, no real footage.")

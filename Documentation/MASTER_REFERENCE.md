@@ -444,7 +444,7 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 | `verify_stgae.py` | ST-GAE graph_spec / masking / feature-count-norm loss / zero-grad masking / determinism / noise-failure (CPU torch) | ✅ 16/16 |
 | `verify_coupling.py` | coupling model (v2): mask isolation (bitwise), vectorized≡sequential 11-target pass, ÷F_n target loss, target-validity zero-grad, planted-coupling recovery + break-spike specificity + domain-shift robustness (simulated v1 failure), noise→degenerate gate (CPU torch) | ✅ 21/21 (2026-07-10) |
 | `verify_report.py` | analyst report: assembly integrity (p95 flag rule, 11-group node table), dead/uncalibratable channel surfacing, degenerate-baseline alert, **baseline index recovered from stats (not assumed 0)**, coupling-lane conditionality, ELAN strictly validation-mode, self-contained HTML (no external URLs, no NaN in JSON) | ✅ 24/24 (2026-07-10) |
-| `verify_multisubject.py` | intake validator (failure classes, WARN vs FAIL, verdict JSON) + replication scorecard (5 verdict classes on a planted 3-subject world; noise-sign pigeonhole guarded; adequacy floor; **non-zero baseline recovery**) + **run_replication driver** (intake→score chaining, FAIL gates scoring) + **GLOBAL-timestamp rebase & WITHIN-CLIP scoring regression** (Simpson's-paradox fixture: pooled inverts to 0.17, within-clip recovers 0.66) | ✅ 28/28 (2026-07-10) |
+| `verify_multisubject.py` | intake validator (failure classes, WARN vs FAIL, verdict JSON) + replication scorecard (5 verdict classes on a planted 3-subject world; noise-sign pigeonhole guarded; adequacy floor; **non-zero baseline recovery**) + **run_replication driver** (intake→score chaining, FAIL gates scoring) + **GLOBAL-timestamp rebase & WITHIN-CLIP scoring regression** (Simpson's-paradox fixture: pooled inverts to 0.17, within-clip recovers 0.66) + **LOSO-head controls** (transferable signal → GENERALIZES; per-subject-unique → SUBJECT-SPECIFIC; leak-free folds; verdict-bar mapping) | ✅ 32/32 (2026-07-17) |
 
 ## 14. Roadmap (future, in intended order — nothing scheduled)
 
@@ -469,17 +469,18 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
    2026-07-09 evaluation did not yield.
 5. **Supervised training path**: needs N>1 annotated subjects; the ELAN corpus +
    `temporal_window_generator.py` exist for it.
-   **⏳→ N=2 REACHED (2026-07-10): SubjectB processed; SubjectA's signal does NOT replicate**
-   (`validation/multisubject/RESULTS.md`). Production cascade on SubjectB (7 clips) + within-clip
-   replication scorecard: **0 REPLICATES / 7 SUBJECT-SPECIFIC / 127 NO-SIGNAL**. SubjectA's AU12
-   lip-tremor family (0.60) and silent-speech incongruence (0.68) are A-specific; **SubjectB leaks
-   through blink_rate (0.71), null in A**. The per-channel deception signal is **idiosyncratic
-   (per-subject)** at N=2 — which *vindicates* per-subject calibration + attribution and *cautions
-   against* any fixed cross-subject channel weighting. **Consequence for the supervised head: do
-   NOT start it — at N=2 there is no robust cross-subject channel to learn; it would need many
-   more subjects and likely per-subject channel profiles.** 4 more sessions incoming will test the
-   subject-specificity hypothesis. (Coupling 4-bar re-eval per subject still pending — lower value
-   now the marginal signal itself doesn't transfer.)
+   **✅→ N=6 REACHED (2026-07-17): SubjectA–F processed; SubjectA's signal does NOT replicate —
+   SUBJECT-SPECIFIC confirmed** (`validation/multisubject/RESULTS.md`). Production cascade on all
+   six + within-clip replication scorecard: **0 REPLICATES / 8 SUBJECT-SPECIFIC / 126 NO-SIGNAL**.
+   SubjectA's AU12 lip-tremor family (0.601) and silent-speech incongruence (0.681) stay A-specific;
+   **SubjectB's blink_rate (0.710) does not recur in C/D/E/F and SubjectD's blink is inverted
+   (0.234)**. No channel clears 0.60 in the same direction for even two subjects. The per-channel
+   deception signal is **idiosyncratic (per-subject)** at N=6 — which *vindicates* per-subject
+   calibration + attribution and *rules out* any fixed cross-subject channel weighting at this N.
+   **Consequence for the supervised head: it runs now only as the pre-registered *quantitative*
+   confirmation of subject-specificity (`SUPERVISED_LOSO_DESIGN.md`; honest prior ≈ chance), NOT as
+   a deployable model.** (Coupling 4-bar re-eval per subject still optional — lower value now the
+   marginal signal itself demonstrably doesn't transfer across 6 people.)
    **TOOLING READY (2026-07-10):** `multisubject/intake_validator.py` (gate each package before
    GPU time) + `multisubject/replication_scorecard.py` (pre-registered REPLICATES/SUBJECT-SPECIFIC
    verdicts). **Full desktop runbook + pre-registered criteria + N>1 future-work specs
@@ -495,6 +496,7 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 | `Documentation/PIPELINE_ARCHITECTURE.md` | The block diagram (Mermaid) — visual companion, kept in sync |
 | `Documentation/ST_GAE_DESIGN.md` | **Frozen** — v1 graph design + §10 falsification record |
 | `Documentation/COUPLING_MODEL_DESIGN.md` | **Frozen** — graph-line v2 design + pre-registered bars + §9 falsification record (2026-07-10; full evidence `validation/gt_subjectA/COUPLING_RESULTS.md`) |
+| `Documentation/SUPERVISED_LOSO_DESIGN.md` | Pre-registered supervised LOSO-head spec (generalizability *test*, not a performance play). **§9 outcome FILLED (2026-07-17, N=6): SUBJECT-SPECIFIC, mean test AUC 0.469 — channels don't transfer; vindicates per-subject calibration.** Code: `multisubject/loso_head.py` + `validation/multisubject/loso_evaluate.py` |
 | `Documentation/MULTISUBJECT_REPLICATION_PLAN.md` | Multi-subject runbook + pre-registered replication criteria + N>1 future-work specs — **the desktop handoff for the new corpus** |
 | `audio_diarization/SPOVNOB_MASTER_REFERENCE.md` | Deep authority for the audio side |
 | `deception_detection/RECORDING_TIMELINE_AND_ACOUSTIC_UPGRADE_PLAN.md` | **Historical** — completed plan (Phases A+B, done 2026-07-02) |
@@ -962,3 +964,43 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   now binds `CUDAExecutionProvider` (details: §11 stack + the cascade-throughput memory). SubjectC
   clicked + Stage-1 (49 segs) + Stage-2 cascade (GPU). D/E/F await operator clicks. Next: finish
   D/E/F → N=6 replication scorecard.
+- **2026-07-17 (desktop) — N=6 REPLICATION RESULT: SUBJECT-SPECIFIC confirmed and hardened; 0/134
+  channels replicate.** All six subjects assembled (A/B + C/D/E/F; per-clip cascade sharded 6-way,
+  Stage-1 serialized D→E→F to avoid the ~21 GB pyannote memory spikes colliding, cascades overlapped
+  via `cascade_orchestrator.sh` — box ran load ~39/88, GPU ~73%). Scored all six with the
+  pre-registered `replication_scorecard` on `replication_manifest_N6.json`. Full write-up
+  `validation/multisubject/RESULTS.md` (N=6 section prepended).
+  - **Result: 0 REPLICATES / 8 SUBJECT-SPECIFIC / 126 NO-SIGNAL** across 134 channels. No channel
+    clears within-clip |z| AUC ≥ 0.60 in the same direction for even two subjects. SubjectA's AU12
+    lip family (0.601) stays flat (~0.50) for all five others; **SubjectB's blink_rate (0.710) does
+    not recur — and SubjectD's blink is inverted (0.234, blinks *less* when lying)**; SubjectA and D
+    both leak `silent_speech_duration_ms` (0.681 / 0.627) but B/E/F invert it. Positive control
+    intact (SubjectA AU12 0.601). Conclusion: per-channel deception leakage is **idiosyncratic per
+    person** — confirmed across 4 new independent subjects; **vindicates per-subject baseline
+    calibration + per-channel |z| attribution; a fixed cross-subject channel weighting / universal
+    classifier is off the table at this N** (it would be wrong-signed for ≥1 subject).
+  - Pure-window counts (Lie/Truth): A 509/140, B 825/1494, C 734/448, D 1103/625, E 554/1146,
+    F 571/137. Clips without an `.eaf` (D C003/C004, E C002) cascaded but unscored — expected.
+  - **Next:** the pre-registered supervised **LOSO head** (`SUPERVISED_LOSO_DESIGN.md`) runs now as
+    the *quantitative* confirmation of subject-specificity (honest prior: ≈ chance = confirms
+    subject-specific; a clearly above-chance result would be the doctrine-revising surprise).
+- **2026-07-17 (desktop) — SUPERVISED LOSO HEAD: SUBJECT-SPECIFIC confirmed quantitatively (mean
+  test AUC 0.469).** Implemented `multisubject/loso_head.py` + `validation/multisubject/loso_evaluate.py`
+  per the pre-registered `SUPERVISED_LOSO_DESIGN.md`. Strict leave-one-subject-out, L2-logreg over
+  the shipped within-clip-centered per-channel z-features (leak-free: clip-median centering uses no
+  labels; per-fold StandardScaler fit on TRAIN only; ELAN labels are the target only). 8,286 pure
+  windows across all six subjects.
+  - **Result: mean LOSO test AUC 0.469 ± 0.040, 0/6 held-out subjects ≥ 0.58** — verdict
+    **SUBJECT-SPECIFIC** (the pre-registered, expected outcome). Every fold ≤ 0.525; four below 0.50.
+    A model trained on 5 people predicts the held-out 6th at/below chance → the channels do **not**
+    transfer. The mild sub-0.5 tilt reflects per-subject channel *inversion* (blink +0.71 B / −0.23
+    D; silent-speech +0.68 A / inverted B/E/F) making a 5-subject majority direction actively
+    mis-predict the held-out person — the hard number behind "0/134 replicate."
+  - **Consequence:** vindicates per-subject baseline calibration + per-channel |z| attribution as the
+    SOLE shipped instrument; no universal/supervised model pursued until N ≫ 6. Cross-subject logreg
+    top-|coef| channels logged as research-only ranking (`loso_coefficients.csv`), never a per-window
+    verdict — output stays **attribution, not classification** (same boundary that archived the TFN
+    classifier and closed the graph line). GBT secondary check skipped (lightgbm absent; the linear
+    head is already below chance, nothing to underfit). Full write-up `SUPERVISED_LOSO_DESIGN.md` §9.
+    **This closes the N=6 replication programme: marginal scorecard + supervised LOSO agree —
+    deception leakage is idiosyncratic per person.**

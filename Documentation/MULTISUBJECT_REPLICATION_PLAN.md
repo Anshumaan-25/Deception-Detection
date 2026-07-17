@@ -218,6 +218,16 @@ defensible for the first time. Design constraints, pre-committed:
 - **Prereq:** ≥3 subjects PASS intake and clear calibration health; the archived
   `analytics/predictive_engine.py` (a superseded TFN classifier) is the cautionary precedent —
   it was archived precisely because it had no honest validation path at N=1.
+- **FULLY PRE-REGISTERED (2026-07-15): `Documentation/SUPERVISED_LOSO_DESIGN.md`** — features,
+  L2-logreg/GBT, strict LOSO protocol, honesty gates, and the fixed interpretation bars
+  (GENERALIZES / WEAK / SUBJECT-SPECIFIC + a Bar-4 false-positive analog). Framed honestly as a
+  **generalizability test, not a performance play**: given the N=2 subject-specific finding, the
+  pre-committed expectation is LOSO ≈ chance (which would *confirm* subject-specificity, not beat
+  the shipped marginal path). Run `validation/multisubject/loso_evaluate.py` once the N=6 corpus is
+  assembled.
+  **→ RAN 2026-07-17 (N=6): SUBJECT-SPECIFIC, mean held-out test AUC 0.469 (0/6 subjects ≥ 0.58) —
+  exactly the pre-committed expectation; confirms subject-specificity. Outcome in
+  `SUPERVISED_LOSO_DESIGN.md` §9 + `validation/multisubject/RESULTS.md`.**
 
 ### 6.2 Coupling model, N>1 (COUPLING_MODEL_DESIGN.md)
 The predictive coupling model (`stgae/coupling_*.py`) currently has one shot at its four
