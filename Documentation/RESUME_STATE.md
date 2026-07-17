@@ -11,9 +11,12 @@
 > 6th at/below chance. Deception leakage is idiosyncratic per person; per-subject calibration +
 > |z| attribution is vindicated as the sole shipped instrument. Full write-ups:
 > `validation/multisubject/RESULTS.md` (N=6 section) + `Documentation/SUPERVISED_LOSO_DESIGN.md` §9.
-> Nothing is running; all outputs on disk. **Next only if the user wants it:** optional per-subject
-> coupling 4-bar re-eval (low value now the marginal signal demonstrably doesn't transfer), or
-> extend the corpus (N ≫ 6) before revisiting any universal model. Local commit made; user pushes.
+> Nothing is running; all outputs on disk. **Follow-up DONE (2026-07-17): per-subject coupling
+> 4-bar re-eval** (`validation/multisubject/coupling_evaluate_generic.py`) — **Bar 4 FAILS on
+> C/D/E** (F N/A, under-powered); with A(×2)+B that's Bar 4 failing on all 5 evaluable subjects. The
+> graph line is closed at N=6. Write-up `validation/multisubject/COUPLING_RESULTS_N6.md`. **Only
+> remaining option:** extend the corpus (N ≫ 6) before revisiting any universal model — needs new
+> annotated subject data from the user. Local commits made; user pushes.
 >
 > <details><summary>(historical) 2026-07-15 wrap-up note — superseded by the line above</summary>
 >

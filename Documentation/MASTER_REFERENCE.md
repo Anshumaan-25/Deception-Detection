@@ -1004,3 +1004,21 @@ line. Completed plan docs are frozen as history, never edited retroactively.
     head is already below chance, nothing to underfit). Full write-up `SUPERVISED_LOSO_DESIGN.md` §9.
     **This closes the N=6 replication programme: marginal scorecard + supervised LOSO agree —
     deception leakage is idiosyncratic per person.**
+- **2026-07-17 (desktop) — COUPLING MODEL N=6 re-eval: FALSIFIED on all evaluable subjects (Bar 4).**
+  Ran the pre-registered 4-bar coupling evaluation across the new subjects via
+  `validation/multisubject/coupling_evaluate_generic.py` (manifest-driven mirror of the SubjectA/B
+  scripts; identical thresholds; auto-selects each subject's richest bilabel FOCUS clip; fits on the
+  baseline clip only). **Bar 4 (Holdout Truth Stability, the go/no-go gate) FAILS on C, D, and E**;
+  SubjectF is N/A (no interview clip reaches ≥20 pure Lie AND Truth windows — under-powered for the
+  within-clip test, though its fit is healthy at ratio 0.627). Combined with SubjectA (×2) and
+  SubjectB, **Bar 4 now fails on all 5 evaluable subjects (A/B/C/D/E)**.
+  - Three flavours of the same failure: **C** truth-flag 46% vs 5% base (truth spikes); **D** the
+    quiet failure — flag-rates stable (6%≈5%) but truth median shifts +2.71 vs the allowed 1.77
+    (truth drifts from baseline as far as lie); **E** the instructive one — **PASSES Bars 1/2/3**
+    (best chan 0.832, top node hand_left, gaze 0.560) yet Bar 4 kills it (truth-flag 77%). Across
+    six subjects the aggregate coupling-z is a **distance-from-baseline** meter, never a deception
+    meter — truthful interview windows are as far from neutral baseline as deceptive ones.
+  - **The graph line (ST-GAE recon v1 + predictive coupling v2) is now closed at N=6, not just N=1.**
+    Same conclusion the marginal scorecard + LOSO reached from the other direction: no transferable
+    deception construct beyond per-subject, per-channel attribution. Full write-up
+    `validation/multisubject/COUPLING_RESULTS_N6.md`; log `pipeline_system_outputs/coupling_N6.log`.
