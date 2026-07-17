@@ -1,0 +1,7 @@
+subject,channel,win_auc,seg_auc
+SubjectA,AU1_var,0.6432991860791468,0.6
+SubjectB,macro_motion_energy_tremor_band_power,0.6210271388584642,0.6060606060606061
+SubjectC,gaze_y_var,0.6146360451537564,1.0
+SubjectD,AU9_var,0.7675477211573863,0.65
+SubjectE,silent_speech_duration_ms,0.6168985200446065,1.0
+SubjectF,AU25_max,0.6762882380763675,0.5833333333333334

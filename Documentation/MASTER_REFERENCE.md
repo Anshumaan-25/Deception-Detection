@@ -1036,3 +1036,19 @@ line. Completed plan docs are frozen as history, never edited retroactively.
   to a true universal model; may reconfirm the null). Recommendation: do 6.1+6.2 now; the 6.3-vs-6.4/6.5
   fork depends on whether deployment is per-subject/personalised or cross-subject — a user decision,
   gated on data availability.
+- **2026-07-17 (desktop) — ACCURACY LEVERS §6.1+§6.2 run (no new data): a weak-universal panel is
+  the general-detector lead.** Per the user's goal (general cross-subject detector; ≤~6 more subjects
+  available) ran the two no-new-data levers. (§6.2) `meta_analysis.py` — directional random-effects
+  (DerSimonian–Laird) pool of signed within-clip AUCs across the 6 subjects — found **5 universal
+  candidates, all tiny** (pooled AUC 0.51–0.52, I²≈0, directionally consistent: emotion_confidence_mean,
+  wavlm_latent_9, gaze_y_mean, AU6_max, AU2_velocity_max). Insight: **strength ⊥ generality** — the
+  universal channels are disjoint from the strong per-subject ones (AU12/blink/silent-speech), and the
+  guessed head_pitch_somatic_dominant_freq did NOT survive the directional test. (§6.1)
+  `aggregate_evaluate.py` — answer-segment aggregation (only 58 segments → segment AUCs N-fragile,
+  directional only). **The robust, window-level result: restricting the LOSO to the 5-channel panel
+  lifts cross-subject window AUC 0.469 → 0.523** (better than the full 134-channel model; 5/6 held-out
+  subjects ≥ 0.507). That is the honest general-detector prototype — weak (~0.52 window/~0.62 segment)
+  but pointed the right way. **Plan as new subjects arrive: re-run both; watch the panel's LOSO window
+  AUC — climbing toward ~0.60 at N≈12 = real progress, stalling at ~0.52 = the null hardens
+  authoritatively.** No doctrine change; labels only scored. Write-up
+  `validation/multisubject/ACCURACY_LEVERS_N6.md`.

@@ -144,20 +144,23 @@ from this corpus.
 Ordered by expected accuracy-per-unit-effort. Each says honestly what data/doctrine change it needs.
 None of these is started; they are options for you to choose among (see the decision at the end).
 
-### 6.1 Coarser decision units (cheap, no new data) — do this first
-Window-level AUC 0.6–0.7 can aggregate to substantially higher **question-level** or **clip-level**
-accuracy if window errors are even weakly independent (majority-vote / mean-probability over a
-question's windows). This is the cheapest real accuracy lever, uses data we already have, and stays
-within the attribution doctrine (you're aggregating attribution, not inventing a verdict). **Cost:
-low. Risk: low. Needs: nothing new.**
+### 6.1 Coarser decision units (cheap, no new data) — **DONE 2026-07-17**
+Aggregated windows into answer-level segments (`validation/multisubject/aggregate_evaluate.py`).
+Full write-up: `validation/multisubject/ACCURACY_LEVERS_N6.md`. Result: segment aggregation trends
+positive everywhere but is N-fragile (only 58 answer-segments total). The **robust** finding is at
+the window level in §B below — the weak-universal *panel* LOSO beats the full-feature LOSO
+(0.523 vs 0.469). Stays within the attribution doctrine (aggregating attribution; labels only score;
+LOSO holds each subject out). **Cost: low. Needs: nothing new.**
 
-### 6.2 Weak-but-broad channel meta-analysis (cheap, no new data)
-Drop the per-subject 0.60 bar; instead ask which channels sit *consistently* just-above-chance across
-many subjects (random-effects meta-analysis over the 6 per-subject AUCs, one-sided). If
-`head_pitch_somatic_dominant_freq` (top-3 in 4/6) or a small panel survives, that's a candidate
-*population* signal the strict replication test can't see. **Cost: low. Needs: nothing new — just a
-new analysis on the existing scorecard outputs. Honest caveat: N=6 gives wide CIs; treat as
-hypothesis-generating.**
+### 6.2 Weak-but-broad channel meta-analysis (cheap, no new data) — **DONE 2026-07-17**
+Directional random-effects (DerSimonian–Laird) pool of each channel's signed within-clip AUC across
+the 6 subjects (`validation/multisubject/meta_analysis.py`). Found **5 universal-signal candidates**
+— all real but tiny (pooled AUC 0.51–0.52, I²≈0, directionally consistent): emotion_confidence_mean
+0.522, wavlm_latent_9 0.521, gaze_y_mean 0.516, AU6_max 0.485, AU2_velocity_max 0.514. Key insight:
+**strength ⊥ generality** — these universal channels are entirely different from the strong
+per-subject ones; the guessed `head_pitch_somatic_dominant_freq` did NOT survive the directional
+test. Feeding just these 5 to the LOSO panel (§6.1-B) *improves* cross-subject transfer (0.523 vs
+0.469 full) — the general-detector lead. **Cost: low. N=6 → wide CIs; hypothesis-generating.**
 
 ### 6.3 Per-subject supervised models (biggest per-person gain — but changes the data regime)
 If deployment can enroll a subject with *their own* labelled baseline+interview data, train a
