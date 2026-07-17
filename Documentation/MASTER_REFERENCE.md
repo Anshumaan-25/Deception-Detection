@@ -498,6 +498,7 @@ All pure pandas/numpy on synthetic data — no GPU, no real footage. Run from
 | `Documentation/COUPLING_MODEL_DESIGN.md` | **Frozen** — graph-line v2 design + pre-registered bars + §9 falsification record (2026-07-10; full evidence `validation/gt_subjectA/COUPLING_RESULTS.md`) |
 | `Documentation/SUPERVISED_LOSO_DESIGN.md` | Pre-registered supervised LOSO-head spec (generalizability *test*, not a performance play). **§9 outcome FILLED (2026-07-17, N=6): SUBJECT-SPECIFIC, mean test AUC 0.469 — channels don't transfer; vindicates per-subject calibration.** Code: `multisubject/loso_head.py` + `validation/multisubject/loso_evaluate.py` |
 | `Documentation/MULTISUBJECT_REPLICATION_PLAN.md` | Multi-subject runbook + pre-registered replication criteria + N>1 future-work specs — **the desktop handoff for the new corpus** |
+| `Documentation/PROJECT_RETROSPECTIVE.md` | **The narrative companion** — full journey (every approach + fate), honest capability statement, and the ranked paths-to-accuracy menu (6.1 coarse decision units, 6.2 weak-broad meta-analysis, 6.3 per-subject supervised, 6.4 hierarchical, 6.5 scale N). Read when asked "does this work / what's next" |
 | `audio_diarization/SPOVNOB_MASTER_REFERENCE.md` | Deep authority for the audio side |
 | `deception_detection/RECORDING_TIMELINE_AND_ACOUSTIC_UPGRADE_PLAN.md` | **Historical** — completed plan (Phases A+B, done 2026-07-02) |
 | `deception_detection/MERGE_INTEGRATION_PLAN.md` | **Historical** — merge plan; known-stale vs code even before completion |
@@ -1022,3 +1023,16 @@ line. Completed plan docs are frozen as history, never edited retroactively.
     Same conclusion the marginal scorecard + LOSO reached from the other direction: no transferable
     deception construct beyond per-subject, per-channel attribution. Full write-up
     `validation/multisubject/COUPLING_RESULTS_N6.md`; log `pipeline_system_outputs/coupling_N6.log`.
+- **2026-07-17 (desktop) — PROJECT_RETROSPECTIVE.md written (journey + honest assessment + paths to
+  accuracy).** After the N=6 corpus closed, captured the full narrative: every approach tried (TFN
+  archived → ST-GAE recon falsified → coupling falsified → per-channel attribution shipped → N=2/N=6
+  subject-specific → LOSO ≈ chance → coupling Bar-4 fails 5/5) and its fate; the crucial reframe
+  (**the per-subject instrument WORKS — positive controls pass, A/B strong, C/D moderate, E/F weak;
+  it is the UNIVERSAL/cross-subject model that failed, three ways**); an honest capability statement;
+  and a ranked paths-to-accuracy menu: 6.1 coarser decision units (question/clip aggregation — cheap,
+  no new data), 6.2 weak-but-broad channel meta-analysis (candidate `head_pitch_somatic_dominant_freq`,
+  top-3 in 4/6), 6.3 per-subject supervised (biggest per-person gain, REQUIRES a label-doctrine change
+  + user sign-off), 6.4 hierarchical/mixed-effects (needs N≈20–50), 6.5 scale N massively (only path
+  to a true universal model; may reconfirm the null). Recommendation: do 6.1+6.2 now; the 6.3-vs-6.4/6.5
+  fork depends on whether deployment is per-subject/personalised or cross-subject — a user decision,
+  gated on data availability.
